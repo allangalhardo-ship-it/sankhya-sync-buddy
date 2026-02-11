@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -10,7 +10,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { sankhya } from "@/lib/sankhya";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -66,6 +67,15 @@ export default function ChecklistDevolucaoDialog({
     pedidosDevolvidos.map((p) => emptyDevolucao(p.numero_pedido, p.cliente_nome, p.nf_fr, p.parceiro, motorista, p.vendedor))
   );
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [motivos, setMotivos] = useState<{ CODIGO: number; DESCRICAO: string }[]>([]);
+
+  useEffect(() => {
+    if (open && motivos.length === 0) {
+      sankhya.getMotivosDevol().then((res) => {
+        if (res.success && res.data) setMotivos(res.data);
+      });
+    }
+  }, [open]);
 
   // Reset state when pedidos change
   const resetIfNeeded = () => {
@@ -216,13 +226,18 @@ export default function ChecklistDevolucaoDialog({
             {/* Motivo */}
             <div className="space-y-1">
               <Label className="text-sm">Motivo da Devolução</Label>
-              <Textarea
-                value={current.motivo}
-                onChange={(e) => updateField("motivo", e.target.value)}
-                placeholder="Descreva o motivo da devolução"
-                rows={2}
-                className="resize-none"
-              />
+              <Select value={current.motivo} onValueChange={(v) => updateField("motivo", v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o motivo" />
+                </SelectTrigger>
+                <SelectContent>
+                  {motivos.map((m) => (
+                    <SelectItem key={m.CODIGO} value={`${m.CODIGO} - ${m.DESCRICAO}`}>
+                      {m.DESCRICAO}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Conferência dos Produtos */}

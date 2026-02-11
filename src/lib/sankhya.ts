@@ -89,6 +89,14 @@ export const sankhya = {
     return data;
   },
 
+  async getMotivosDevol(): Promise<SankhyaResponse<{ CODIGO: number; DESCRICAO: string }[]>> {
+    const { data, error } = await supabase.functions.invoke("sankhya-api", {
+      body: { action: "getMotivosDevol" },
+    });
+    if (error) return { success: false, error: error.message };
+    return data;
+  },
+
   async request<T = unknown>(
     method: string,
     path: string,
