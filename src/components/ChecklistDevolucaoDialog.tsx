@@ -35,18 +35,19 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onConfirm: (devolucoes: DevolucaoInfo[]) => void;
-  pedidosDevolvidos: { numero_pedido: string; cliente_nome: string }[];
+  pedidosDevolvidos: { numero_pedido: string; cliente_nome: string; nf_fr?: string; parceiro?: string }[];
+  motorista: string;
   saving: boolean;
 }
 
-const emptyDevolucao = (nunota: string, cliente: string): DevolucaoInfo => ({
+const emptyDevolucao = (nunota: string, cliente: string, nf_fr?: string, parceiro?: string, agregado?: string): DevolucaoInfo => ({
   nunota,
   cliente_nome: cliente,
   tipo_devolucao: "total",
-  agregado: "",
-  nf_fr: "",
+  agregado: agregado || "",
+  nf_fr: nf_fr || "",
   nf_cliente: "",
-  parceiro: "",
+  parceiro: parceiro || "",
   vendedor: "",
   motivo: "",
   conferencia_produtos: "sim",
@@ -58,17 +59,18 @@ export default function ChecklistDevolucaoDialog({
   onClose,
   onConfirm,
   pedidosDevolvidos,
+  motorista,
   saving,
 }: Props) {
   const [devolucoes, setDevolucoes] = useState<DevolucaoInfo[]>(() =>
-    pedidosDevolvidos.map((p) => emptyDevolucao(p.numero_pedido, p.cliente_nome))
+    pedidosDevolvidos.map((p) => emptyDevolucao(p.numero_pedido, p.cliente_nome, p.nf_fr, p.parceiro, motorista))
   );
   const [currentIndex, setCurrentIndex] = useState(0);
 
   // Reset state when pedidos change
   const resetIfNeeded = () => {
     if (devolucoes.length !== pedidosDevolvidos.length) {
-      setDevolucoes(pedidosDevolvidos.map((p) => emptyDevolucao(p.numero_pedido, p.cliente_nome)));
+      setDevolucoes(pedidosDevolvidos.map((p) => emptyDevolucao(p.numero_pedido, p.cliente_nome, p.nf_fr, p.parceiro, motorista)));
       setCurrentIndex(0);
     }
   };
@@ -160,6 +162,8 @@ export default function ChecklistDevolucaoDialog({
                 value={current.agregado}
                 onChange={(e) => updateField("agregado", e.target.value)}
                 placeholder="Nome do agregado"
+                readOnly={!!motorista}
+                className={motorista ? "bg-muted" : ""}
               />
             </div>
 
@@ -171,6 +175,8 @@ export default function ChecklistDevolucaoDialog({
                   value={current.nf_fr}
                   onChange={(e) => updateField("nf_fr", e.target.value)}
                   placeholder="Nota fiscal FR"
+                  readOnly={!!pedidosDevolvidos[currentIndex]?.nf_fr}
+                  className={pedidosDevolvidos[currentIndex]?.nf_fr ? "bg-muted" : ""}
                 />
               </div>
               <div className="space-y-1">
@@ -191,6 +197,8 @@ export default function ChecklistDevolucaoDialog({
                   value={current.parceiro}
                   onChange={(e) => updateField("parceiro", e.target.value)}
                   placeholder="Nome do parceiro"
+                  readOnly={!!pedidosDevolvidos[currentIndex]?.parceiro}
+                  className={pedidosDevolvidos[currentIndex]?.parceiro ? "bg-muted" : ""}
                 />
               </div>
               <div className="space-y-1">
