@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
-import { sankhya } from "@/lib/sankhya";
+import { sankhya, CabecalhoData, PedidoData } from "@/lib/sankhya";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -62,42 +62,41 @@ const Acerto = () => {
     setLoading(true);
 
     try {
-      // Fetch ordem de carga from Sankhya
-      const response = await sankhya.request("GET", `/api/v1/ordens-carga/${codigoBarras.trim()}`);
+      // Fetch cabeçalho and pedidos in parallel from Sankhya
+      const [cabecalhoRes, pedidosRes] = await Promise.all([
+        sankhya.getCabecalho(codigoBarras.trim()),
+        sankhya.getPedidos(codigoBarras.trim()),
+      ]);
 
-      if (!response.success) {
-        // If Sankhya API fails, create mock data for testing
+      if (!cabecalhoRes.success || !cabecalhoRes.data) {
+        console.error("Erro ao buscar cabeçalho:", cabecalhoRes);
         toast({
-          title: "Aviso",
-          description: "Não foi possível buscar dados do Sankhya. Usando dados da ordem de carga informada.",
-          variant: "default",
+          title: "Erro",
+          description: cabecalhoRes.error || "Ordem de carga não encontrada no Sankhya.",
+          variant: "destructive",
         });
+        setLoading(false);
+        return;
       }
 
-      const data = response.data as any;
+      const cab = cabecalhoRes.data as CabecalhoData;
+      const pedidosData = (pedidosRes.data || []) as PedidoData[];
 
-      // Try to get pedidos from Sankhya
-      const pedidosResponse = await sankhya.request("GET", `/api/v1/ordens-carga/${codigoBarras.trim()}/pedidos`);
-      const pedidosData = pedidosResponse.data as any;
-
-      // Parse data from Sankhya or use fallback
+      // Build OrdemCarga from real Sankhya data
       const ordem: OrdemCarga = {
-        numero: codigoBarras.trim(),
-        motorista: data?.motorista?.nome || data?.nomeMotorista || "Motorista não encontrado",
-        placa: data?.placa || data?.placaVeiculo || "Placa não informada",
-        pedidos: Array.isArray(pedidosData?.pedidos || pedidosData)
-          ? (pedidosData?.pedidos || pedidosData).map((p: any) => ({
-              numero_pedido: String(p.numeroPedido || p.numero || p.NUNOTA || ""),
-              numero_unico: String(p.numeroUnico || p.NUNOTA || ""),
-              cliente_nome: p.nomeCliente || p.cliente?.nome || p.NOMEPARC || "Cliente",
-              endereco: p.endereco || p.enderecoEntrega || "",
-              status_entrega: "pendente" as StatusEntrega,
-              observacao: "",
-            }))
-          : [],
+        numero: String(cab.ORDEMCARGA),
+        motorista: cab.NOMEPARC || "Motorista não encontrado",
+        placa: pedidosData.length > 0 ? pedidosData[0].PLACA || "Placa não informada" : "Placa não informada",
+        pedidos: pedidosData.map((p) => ({
+          numero_pedido: String(p.NUNOTA || ""),
+          numero_unico: String(p.NUMNOTA || ""),
+          cliente_nome: p.NOME_DO_CLIENTE || "Cliente",
+          endereco: p.ENDERECO || "",
+          status_entrega: (p.REENT === "REENTREGA" ? "reentrega" : "pendente") as StatusEntrega,
+          observacao: [p.CARTASELO, p.AGENDAMENTO, p.PRIORIDADE].filter(Boolean).join(" | "),
+        })),
       };
 
-      // If no pedidos found, show a message
       if (ordem.pedidos.length === 0) {
         ordem.pedidos = [
           {
@@ -141,7 +140,8 @@ const Acerto = () => {
                 numero_unico: p.numero_unico,
                 cliente_nome: p.cliente_nome,
                 endereco: p.endereco,
-                status_entrega: "pendente",
+                status_entrega: p.status_entrega,
+                observacao: p.observacao,
               }))
             );
 
@@ -151,7 +151,10 @@ const Acerto = () => {
         }
       }
 
-      toast({ title: "Romaneio carregado!", description: `Ordem de carga ${ordem.numero} encontrada.` });
+      toast({
+        title: "Romaneio carregado!",
+        description: `OC ${ordem.numero} - ${cab.QTDPEDIDO} pedido(s), ${cab.QTDCLI} cliente(s)`,
+      });
     } catch (err) {
       console.error("Erro:", err);
       toast({
