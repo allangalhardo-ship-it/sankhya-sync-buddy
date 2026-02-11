@@ -45,6 +45,7 @@ export interface PedidoData {
   TELEFONE: string;
   NUNOTA: number;
   STATUS_ACERTO?: number | null;
+  VENDEDOR?: string;
   NUMNOTA: number;
   DESCRTIPPARC: string;
   CARTASELO: string;
