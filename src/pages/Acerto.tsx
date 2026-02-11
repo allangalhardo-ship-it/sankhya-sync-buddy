@@ -1,0 +1,467 @@
+import { useState, useRef, useCallback } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
+import { sankhya } from "@/lib/sankhya";
+import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
+import {
+  ArrowLeft, ScanBarcode, Loader2, Truck, User, MapPin,
+  CheckCircle2, XCircle, RotateCcw, Clock, Camera, Save, Send
+} from "lucide-react";
+
+type StatusEntrega = "pendente" | "entregue" | "devolvido" | "reentrega";
+
+interface Pedido {
+  id?: string;
+  numero_pedido: string;
+  numero_unico?: string;
+  cliente_nome: string;
+  endereco?: string;
+  status_entrega: StatusEntrega;
+  observacao: string;
+  foto_canhoto_url?: string;
+  fotoFile?: File;
+}
+
+interface OrdemCarga {
+  numero: string;
+  motorista: string;
+  placa: string;
+  pedidos: Pedido[];
+}
+
+const statusConfig: Record<StatusEntrega, { label: string; icon: typeof CheckCircle2; className: string }> = {
+  pendente: { label: "Pendente", icon: Clock, className: "bg-muted text-muted-foreground" },
+  entregue: { label: "Entregue", icon: CheckCircle2, className: "bg-success text-success-foreground" },
+  devolvido: { label: "Devolvido", icon: XCircle, className: "bg-destructive text-destructive-foreground" },
+  reentrega: { label: "Reentrega", icon: RotateCcw, className: "bg-warning text-warning-foreground" },
+};
+
+const Acerto = () => {
+  const { tipo } = useParams<{ tipo: string }>();
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const { toast } = useToast();
+
+  const [codigoBarras, setCodigoBarras] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [ordemCarga, setOrdemCarga] = useState<OrdemCarga | null>(null);
+  const [acertoId, setAcertoId] = useState<string | null>(null);
+  const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
+
+  const tipoLabel = tipo === "entrega" ? "Entrega" : "Devolução";
+
+  const handleScan = async () => {
+    if (!codigoBarras.trim()) return;
+    setLoading(true);
+
+    try {
+      // Fetch ordem de carga from Sankhya
+      const response = await sankhya.request("GET", `/api/v1/ordens-carga/${codigoBarras.trim()}`);
+
+      if (!response.success) {
+        // If Sankhya API fails, create mock data for testing
+        toast({
+          title: "Aviso",
+          description: "Não foi possível buscar dados do Sankhya. Usando dados da ordem de carga informada.",
+          variant: "default",
+        });
+      }
+
+      const data = response.data as any;
+
+      // Try to get pedidos from Sankhya
+      const pedidosResponse = await sankhya.request("GET", `/api/v1/ordens-carga/${codigoBarras.trim()}/pedidos`);
+      const pedidosData = pedidosResponse.data as any;
+
+      // Parse data from Sankhya or use fallback
+      const ordem: OrdemCarga = {
+        numero: codigoBarras.trim(),
+        motorista: data?.motorista?.nome || data?.nomeMotorista || "Motorista não encontrado",
+        placa: data?.placa || data?.placaVeiculo || "Placa não informada",
+        pedidos: Array.isArray(pedidosData?.pedidos || pedidosData)
+          ? (pedidosData?.pedidos || pedidosData).map((p: any) => ({
+              numero_pedido: String(p.numeroPedido || p.numero || p.NUNOTA || ""),
+              numero_unico: String(p.numeroUnico || p.NUNOTA || ""),
+              cliente_nome: p.nomeCliente || p.cliente?.nome || p.NOMEPARC || "Cliente",
+              endereco: p.endereco || p.enderecoEntrega || "",
+              status_entrega: "pendente" as StatusEntrega,
+              observacao: "",
+            }))
+          : [],
+      };
+
+      // If no pedidos found, show a message
+      if (ordem.pedidos.length === 0) {
+        ordem.pedidos = [
+          {
+            numero_pedido: "Sem pedidos",
+            cliente_nome: "Nenhum pedido encontrado nesta ordem de carga",
+            status_entrega: "pendente",
+            observacao: "",
+          },
+        ];
+      }
+
+      setOrdemCarga(ordem);
+
+      // Create acerto record in database
+      const { data: acertoData, error: acertoError } = await supabase
+        .from("acertos")
+        .insert({
+          user_id: user!.id,
+          tipo: tipo as "entrega" | "devolucao",
+          numero_ordem_carga: ordem.numero,
+          motorista_nome: ordem.motorista,
+          placa: ordem.placa,
+        })
+        .select("id")
+        .single();
+
+      if (acertoError) {
+        console.error("Erro ao criar acerto:", acertoError);
+        toast({ title: "Erro", description: "Erro ao salvar acerto no banco.", variant: "destructive" });
+      } else {
+        setAcertoId(acertoData.id);
+
+        // Insert pedidos
+        if (ordem.pedidos.length > 0 && ordem.pedidos[0].numero_pedido !== "Sem pedidos") {
+          const { error: pedidosError } = await supabase
+            .from("acerto_pedidos")
+            .insert(
+              ordem.pedidos.map((p) => ({
+                acerto_id: acertoData.id,
+                numero_pedido: p.numero_pedido,
+                numero_unico: p.numero_unico,
+                cliente_nome: p.cliente_nome,
+                endereco: p.endereco,
+                status_entrega: "pendente",
+              }))
+            );
+
+          if (pedidosError) {
+            console.error("Erro ao inserir pedidos:", pedidosError);
+          }
+        }
+      }
+
+      toast({ title: "Romaneio carregado!", description: `Ordem de carga ${ordem.numero} encontrada.` });
+    } catch (err) {
+      console.error("Erro:", err);
+      toast({
+        title: "Erro",
+        description: "Não foi possível carregar o romaneio. Verifique o código.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updatePedidoStatus = (index: number, status: StatusEntrega) => {
+    if (!ordemCarga) return;
+    const updated = { ...ordemCarga };
+    updated.pedidos[index].status_entrega = status;
+    setOrdemCarga(updated);
+  };
+
+  const updatePedidoObs = (index: number, obs: string) => {
+    if (!ordemCarga) return;
+    const updated = { ...ordemCarga };
+    updated.pedidos[index].observacao = obs;
+    setOrdemCarga(updated);
+  };
+
+  const handlePhotoCapture = (index: number, file: File) => {
+    if (!ordemCarga) return;
+    const updated = { ...ordemCarga };
+    updated.pedidos[index].fotoFile = file;
+    setOrdemCarga(updated);
+  };
+
+  const handleFinalize = async () => {
+    if (!ordemCarga || !acertoId) return;
+    setSaving(true);
+
+    try {
+      // Upload photos and update pedidos
+      for (const pedido of ordemCarga.pedidos) {
+        let fotoUrl = pedido.foto_canhoto_url;
+
+        if (pedido.fotoFile) {
+          const fileName = `${acertoId}/${pedido.numero_pedido}_${Date.now()}.jpg`;
+          const { data: uploadData, error: uploadError } = await supabase.storage
+            .from("canhotos")
+            .upload(fileName, pedido.fotoFile);
+
+          if (uploadError) {
+            console.error("Erro ao fazer upload:", uploadError);
+          } else {
+            fotoUrl = uploadData.path;
+          }
+        }
+
+        // Update pedido in database
+        if (pedido.id) {
+          await supabase
+            .from("acerto_pedidos")
+            .update({
+              status_entrega: pedido.status_entrega,
+              observacao: pedido.observacao,
+              foto_canhoto_url: fotoUrl,
+            })
+            .eq("id", pedido.id);
+        } else {
+          // Update by acerto_id + numero_pedido
+          await supabase
+            .from("acerto_pedidos")
+            .update({
+              status_entrega: pedido.status_entrega,
+              observacao: pedido.observacao,
+              foto_canhoto_url: fotoUrl,
+            })
+            .eq("acerto_id", acertoId)
+            .eq("numero_pedido", pedido.numero_pedido);
+        }
+      }
+
+      // Finalize acerto
+      await supabase
+        .from("acertos")
+        .update({ status: "finalizado", finalizado_at: new Date().toISOString() })
+        .eq("id", acertoId);
+
+      toast({ title: "Acerto finalizado!", description: "Todos os dados foram salvos com sucesso." });
+      navigate("/dashboard");
+    } catch (err) {
+      console.error("Erro ao finalizar:", err);
+      toast({ title: "Erro", description: "Erro ao finalizar o acerto.", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const pendingCount = ordemCarga?.pedidos.filter((p) => p.status_entrega === "pendente").length ?? 0;
+
+  return (
+    <div className="min-h-screen bg-background">
+      {/* Header */}
+      <header className="border-b border-border bg-card sticky top-0 z-10">
+        <div className="container mx-auto flex items-center gap-3 px-4 py-3">
+          <Button variant="ghost" size="icon" onClick={() => navigate("/dashboard")}>
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div>
+            <h1 className="text-lg font-bold text-foreground">Checklist de {tipoLabel}</h1>
+            <p className="text-xs text-muted-foreground">Escaneie o romaneio para começar</p>
+          </div>
+        </div>
+      </header>
+
+      <main className="container mx-auto px-4 py-6 space-y-6 max-w-2xl">
+        {/* Scanner Section */}
+        {!ordemCarga && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <ScanBarcode className="h-5 w-5 text-primary" />
+                Ler Código de Barras
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Escaneie o código de barras do romaneio ou digite o número da ordem de carga.
+              </p>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Número da ordem de carga"
+                  value={codigoBarras}
+                  onChange={(e) => setCodigoBarras(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleScan()}
+                  autoFocus
+                  className="text-lg font-mono"
+                />
+                <Button onClick={handleScan} disabled={loading || !codigoBarras.trim()}>
+                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanBarcode className="h-4 w-4" />}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Ordem de Carga Info */}
+        {ordemCarga && (
+          <>
+            <Card className="border-primary/20 bg-primary/5">
+              <CardContent className="py-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="flex items-center gap-2">
+                    <ScanBarcode className="h-4 w-4 text-primary" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Ordem de Carga</p>
+                      <p className="font-bold text-foreground">{ordemCarga.numero}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <User className="h-4 w-4 text-primary" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Motorista</p>
+                      <p className="font-semibold text-foreground">{ordemCarga.motorista}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Truck className="h-4 w-4 text-primary" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Placa</p>
+                      <p className="font-semibold text-foreground">{ordemCarga.placa}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <MapPin className="h-4 w-4 text-primary" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">Pedidos</p>
+                      <p className="font-semibold text-foreground">{ordemCarga.pedidos.length}</p>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Progress */}
+            <div className="flex items-center justify-between bg-card rounded-lg p-3 border">
+              <span className="text-sm font-medium text-foreground">Progresso</span>
+              <div className="flex gap-2">
+                {Object.entries(statusConfig).map(([key, config]) => {
+                  const count = ordemCarga.pedidos.filter((p) => p.status_entrega === key).length;
+                  if (count === 0) return null;
+                  return (
+                    <Badge key={key} className={config.className}>
+                      {config.label}: {count}
+                    </Badge>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Pedidos List */}
+            <div className="space-y-4">
+              {ordemCarga.pedidos.map((pedido, index) => {
+                const status = statusConfig[pedido.status_entrega];
+                const StatusIcon = status.icon;
+                return (
+                  <Card key={index} className="overflow-hidden">
+                    <div className={`h-1 ${status.className}`} />
+                    <CardContent className="py-4 space-y-4">
+                      {/* Pedido Header */}
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <p className="font-bold text-foreground">Pedido {pedido.numero_pedido}</p>
+                          <p className="text-sm text-muted-foreground">{pedido.cliente_nome}</p>
+                          {pedido.endereco && (
+                            <p className="text-xs text-muted-foreground mt-1">{pedido.endereco}</p>
+                          )}
+                        </div>
+                        <Badge className={status.className}>
+                          <StatusIcon className="h-3 w-3 mr-1" />
+                          {status.label}
+                        </Badge>
+                      </div>
+
+                      {/* Status Buttons */}
+                      <div className="grid grid-cols-4 gap-2">
+                        {(Object.entries(statusConfig) as [StatusEntrega, typeof statusConfig.pendente][]).map(
+                          ([key, config]) => {
+                            const Icon = config.icon;
+                            const isActive = pedido.status_entrega === key;
+                            return (
+                              <Button
+                                key={key}
+                                variant={isActive ? "default" : "outline"}
+                                size="sm"
+                                className={`flex flex-col h-auto py-2 text-xs ${isActive ? config.className : ""}`}
+                                onClick={() => updatePedidoStatus(index, key)}
+                              >
+                                <Icon className="h-4 w-4 mb-1" />
+                                {config.label}
+                              </Button>
+                            );
+                          }
+                        )}
+                      </div>
+
+                      {/* Observação */}
+                      <Textarea
+                        placeholder="Observação (opcional)"
+                        value={pedido.observacao}
+                        onChange={(e) => updatePedidoObs(index, e.target.value)}
+                        className="text-sm resize-none"
+                        rows={2}
+                      />
+
+                      {/* Photo */}
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          className="hidden"
+                          ref={(el) => { fileInputRefs.current[index] = el; }}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handlePhotoCapture(index, file);
+                          }}
+                        />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => fileInputRefs.current[index]?.click()}
+                          className="text-xs"
+                        >
+                          <Camera className="h-4 w-4 mr-1" />
+                          {pedido.fotoFile ? "Foto anexada ✓" : "Anexar Canhoto"}
+                        </Button>
+                        {pedido.fotoFile && (
+                          <span className="text-xs text-success font-medium">
+                            {pedido.fotoFile.name}
+                          </span>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+
+            {/* Finalize Button */}
+            <div className="sticky bottom-4 pt-4">
+              <Button
+                onClick={handleFinalize}
+                disabled={saving || pendingCount === ordemCarga.pedidos.length}
+                className="w-full h-14 text-lg font-bold bg-primary hover:bg-primary/90 shadow-lg"
+                size="lg"
+              >
+                {saving ? (
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                ) : (
+                  <Send className="mr-2 h-5 w-5" />
+                )}
+                Finalizar Acerto
+                {pendingCount > 0 && (
+                  <span className="ml-2 text-sm font-normal opacity-80">({pendingCount} pendentes)</span>
+                )}
+              </Button>
+            </div>
+          </>
+        )}
+      </main>
+    </div>
+  );
+};
+
+export default Acerto;
