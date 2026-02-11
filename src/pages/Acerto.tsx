@@ -28,6 +28,7 @@ interface Pedido {
   foto_canhoto_url?: string;
   fotoFile?: File;
   is_reentrega?: boolean;
+  vendedor?: string;
 }
 
 interface OrdemCarga {
@@ -115,6 +116,7 @@ const Acerto = () => {
           status_entrega: sankhyaStatusToEntrega(p.STATUS_ACERTO),
           observacao: [p.CARTASELO, p.AGENDAMENTO, p.PRIORIDADE].filter(Boolean).join(" | "),
           is_reentrega: p.REENT === "REENTREGA",
+          vendedor: p.VENDEDOR || "",
         })),
       };
 
@@ -584,6 +586,7 @@ const Acerto = () => {
           cliente_nome: p.cliente_nome,
           nf_fr: p.numero_unico || p.numero_pedido,
           parceiro: p.cliente_nome,
+          vendedor: p.vendedor || "",
         }))}
         motorista={ordemCarga?.motorista || ""}
         saving={saving}

@@ -35,12 +35,12 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onConfirm: (devolucoes: DevolucaoInfo[]) => void;
-  pedidosDevolvidos: { numero_pedido: string; cliente_nome: string; nf_fr?: string; parceiro?: string }[];
+  pedidosDevolvidos: { numero_pedido: string; cliente_nome: string; nf_fr?: string; parceiro?: string; vendedor?: string }[];
   motorista: string;
   saving: boolean;
 }
 
-const emptyDevolucao = (nunota: string, cliente: string, nf_fr?: string, parceiro?: string, agregado?: string): DevolucaoInfo => ({
+const emptyDevolucao = (nunota: string, cliente: string, nf_fr?: string, parceiro?: string, agregado?: string, vendedor?: string): DevolucaoInfo => ({
   nunota,
   cliente_nome: cliente,
   tipo_devolucao: "total",
@@ -48,7 +48,7 @@ const emptyDevolucao = (nunota: string, cliente: string, nf_fr?: string, parceir
   nf_fr: nf_fr || "",
   nf_cliente: "",
   parceiro: parceiro || "",
-  vendedor: "",
+  vendedor: vendedor || "",
   motivo: "",
   conferencia_produtos: "sim",
   desconta_taxa_vendedor: "nao",
@@ -63,14 +63,14 @@ export default function ChecklistDevolucaoDialog({
   saving,
 }: Props) {
   const [devolucoes, setDevolucoes] = useState<DevolucaoInfo[]>(() =>
-    pedidosDevolvidos.map((p) => emptyDevolucao(p.numero_pedido, p.cliente_nome, p.nf_fr, p.parceiro, motorista))
+    pedidosDevolvidos.map((p) => emptyDevolucao(p.numero_pedido, p.cliente_nome, p.nf_fr, p.parceiro, motorista, p.vendedor))
   );
   const [currentIndex, setCurrentIndex] = useState(0);
 
   // Reset state when pedidos change
   const resetIfNeeded = () => {
     if (devolucoes.length !== pedidosDevolvidos.length) {
-      setDevolucoes(pedidosDevolvidos.map((p) => emptyDevolucao(p.numero_pedido, p.cliente_nome, p.nf_fr, p.parceiro, motorista)));
+      setDevolucoes(pedidosDevolvidos.map((p) => emptyDevolucao(p.numero_pedido, p.cliente_nome, p.nf_fr, p.parceiro, motorista, p.vendedor)));
       setCurrentIndex(0);
     }
   };
@@ -207,6 +207,8 @@ export default function ChecklistDevolucaoDialog({
                   value={current.vendedor}
                   onChange={(e) => updateField("vendedor", e.target.value)}
                   placeholder="Nome do vendedor"
+                  readOnly={!!pedidosDevolvidos[currentIndex]?.vendedor}
+                  className={pedidosDevolvidos[currentIndex]?.vendedor ? "bg-muted" : ""}
                 />
               </div>
             </div>
