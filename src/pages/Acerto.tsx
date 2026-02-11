@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { sankhya, CabecalhoData, PedidoData } from "@/lib/sankhya";
@@ -256,15 +256,20 @@ const Acerto = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border bg-card sticky top-0 z-10">
+      {/* Header - FR branded */}
+      <header className="bg-[hsl(220,35%,14%)] sticky top-0 z-10">
         <div className="container mx-auto flex items-center gap-3 px-4 py-3">
-          <Button variant="ghost" size="icon" onClick={() => navigate("/dashboard")}>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate("/dashboard")}
+            className="text-[hsl(215,15%,75%)] hover:bg-[hsl(220,30%,20%)] hover:text-white"
+          >
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-lg font-bold text-foreground">Checklist de {tipoLabel}</h1>
-            <p className="text-xs text-muted-foreground">Escaneie o romaneio para começar</p>
+            <h1 className="text-lg font-bold text-white">Checklist de {tipoLabel}</h1>
+            <p className="text-xs text-[hsl(215,15%,65%)]">FR Distribuição · Acerto de Romaneio</p>
           </div>
         </div>
       </header>
