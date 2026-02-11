@@ -194,8 +194,16 @@ const Acerto = () => {
     if (!ordemCarga || !acertoId) return;
     setSaving(true);
 
+    // Status mapping: app → Sankhya AD_NFACERTO
+    const statusMap: Record<StatusEntrega, number> = {
+      pendente: 8,
+      entregue: 1,
+      devolvido: 5,
+      reentrega: 3,
+    };
+
     try {
-      // Upload photos and update pedidos
+      // Upload photos and update pedidos in local DB
       for (const pedido of ordemCarga.pedidos) {
         let fotoUrl = pedido.foto_canhoto_url;
 
@@ -223,7 +231,6 @@ const Acerto = () => {
             })
             .eq("id", pedido.id);
         } else {
-          // Update by acerto_id + numero_pedido
           await supabase
             .from("acerto_pedidos")
             .update({
@@ -236,13 +243,36 @@ const Acerto = () => {
         }
       }
 
+      // Save to Sankhya AD_NFACERTO
+      const pedidosSankhya = ordemCarga.pedidos
+        .filter((p) => p.numero_pedido !== "Sem pedidos")
+        .map((p) => ({
+          nunota: parseInt(p.numero_pedido, 10),
+          ordemCarga: parseInt(ordemCarga.numero, 10),
+          status: statusMap[p.status_entrega],
+        }));
+
+      if (pedidosSankhya.length > 0) {
+        const sankhyaResult = await sankhya.saveAcerto(pedidosSankhya);
+        if (!sankhyaResult.success) {
+          console.error("Erro ao salvar no Sankhya:", sankhyaResult);
+          toast({
+            title: "Atenção",
+            description: "Acerto salvo localmente, mas houve erro ao gravar no Sankhya: " + (sankhyaResult.error || "Erro desconhecido"),
+            variant: "destructive",
+          });
+        } else {
+          console.log("Sankhya AD_NFACERTO atualizado com sucesso:", sankhyaResult);
+        }
+      }
+
       // Finalize acerto
       await supabase
         .from("acertos")
         .update({ status: "finalizado", finalizado_at: new Date().toISOString() })
         .eq("id", acertoId);
 
-      toast({ title: "Acerto finalizado!", description: "Todos os dados foram salvos com sucesso." });
+      toast({ title: "Acerto finalizado!", description: "Dados salvos no sistema e no Sankhya com sucesso." });
       navigate("/dashboard");
     } catch (err) {
       console.error("Erro ao finalizar:", err);
