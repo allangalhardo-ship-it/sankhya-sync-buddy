@@ -2,7 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ClipboardCheck, LogOut, User, PackageX } from "lucide-react";
+import { ClipboardCheck, LogOut, User, Warehouse } from "lucide-react";
 import FRLogo from "@/components/FRLogo";
 
 const Dashboard = () => {
@@ -64,18 +64,18 @@ const Dashboard = () => {
           </Card>
 
           <Card
-            className="cursor-pointer transition-all hover:shadow-lg hover:-translate-y-1 border-2 border-l-4 border-l-destructive hover:border-destructive/50 group"
-            onClick={() => navigate("/historico-devolucoes")}
+            className="cursor-pointer transition-all hover:shadow-lg hover:-translate-y-1 border-2 border-l-4 border-l-warning hover:border-warning/50 group"
+            onClick={() => navigate("/pendencias-logistica")}
           >
             <CardHeader className="pb-3">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-destructive/10 group-hover:bg-destructive/20 transition-colors">
-                <PackageX className="h-7 w-7 text-destructive" />
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-warning/10 group-hover:bg-warning/20 transition-colors">
+                <Warehouse className="h-7 w-7 text-warning" />
               </div>
             </CardHeader>
             <CardContent>
-              <CardTitle className="text-xl mb-2">Histórico de Devoluções</CardTitle>
+              <CardTitle className="text-xl mb-2">Pendências de Logística</CardTitle>
               <CardDescription>
-                Visualize todas as devoluções registradas com detalhes completos do checklist.
+                Gerencie devoluções pendentes de recebimento e preencha o checklist logístico.
               </CardDescription>
             </CardContent>
           </Card>
