@@ -37,7 +37,7 @@ const Login = () => {
     if (error) {
       toast({ title: "Erro no cadastro", description: error, variant: "destructive" });
     } else {
-      toast({ title: "Cadastro realizado!", description: "Verifique seu e-mail para confirmar a conta." });
+      toast({ title: "Cadastro realizado!", description: "Você já está logado." });
     }
     setLoading(false);
   };
