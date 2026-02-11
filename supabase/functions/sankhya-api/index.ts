@@ -69,14 +69,14 @@ async function executeQuery(sql: string): Promise<unknown> {
     'Content-Type': 'application/json',
   };
 
-  const body = JSON.stringify({
+  const requestBody = JSON.stringify({
     serviceName: 'DbExplorerSP.executeQuery',
     requestBody: {
       sql: sql,
     },
   });
 
-  let response = await fetch(url, { method: 'POST', headers, body });
+  let response = await fetch(url, { method: 'POST', headers, body: requestBody });
 
   // If 401, try re-authenticating once
   if (response.status === 401) {
@@ -84,7 +84,7 @@ async function executeQuery(sql: string): Promise<unknown> {
     tokenCache.accessToken = null;
     const newToken = await authenticate();
     headers['Authorization'] = `Bearer ${newToken}`;
-    response = await fetch(url, { method: 'POST', headers, body });
+    response = await fetch(url, { method: 'POST', headers, body: requestBody });
   }
 
   if (!response.ok) {
@@ -94,6 +94,69 @@ async function executeQuery(sql: string): Promise<unknown> {
   }
 
   const data = await response.json();
+  return data;
+}
+
+async function saveCrudRecord(rootEntity: string, fields: Record<string, any>): Promise<unknown> {
+  const token = await authenticate();
+  const gatewayUrl = Deno.env.get('SANKHYA_GATEWAY_URL')!;
+
+  const url = `${gatewayUrl}/gateway/v1/mge/service.sbr?serviceName=DatasetSP.save&outputType=json`;
+  console.log(`[Sankhya] Salvando registro via DatasetSP.save - Entity: ${rootEntity}`);
+
+  const row: Record<string, any> = {};
+  const fieldList: string[] = [];
+  for (const [key, value] of Object.entries(fields)) {
+    row[key] = { $: String(value) };
+    fieldList.push(key);
+  }
+
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json',
+  };
+
+  const requestBody = JSON.stringify({
+    serviceName: 'DatasetSP.save',
+    requestBody: {
+      dataSet: {
+        rootEntity,
+        includePresentationFields: 'S',
+        entity: {
+          fieldset: {
+            list: fieldList.join(','),
+          },
+        },
+        rows: {
+          row,
+        },
+      },
+    },
+  });
+
+  let response = await fetch(url, { method: 'POST', headers, body: requestBody });
+
+  if (response.status === 401) {
+    console.log('[Sankhya] Token expirado, re-autenticando...');
+    tokenCache.accessToken = null;
+    const newToken = await authenticate();
+    headers['Authorization'] = `Bearer ${newToken}`;
+    response = await fetch(url, { method: 'POST', headers, body: requestBody });
+  }
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('[Sankhya] Erro ao salvar:', response.status, errorText);
+    throw new Error(`Erro ao salvar Sankhya: ${response.status} - ${errorText}`);
+  }
+
+  const data = await response.json();
+  console.log('[Sankhya] Resposta DatasetSP.save:', JSON.stringify(data).substring(0, 500));
+
+  if (data.status === '0' || data.status === 0) {
+    throw new Error(`Erro Sankhya: ${data.statusMessage || 'Erro desconhecido'}`);
+  }
+
   return data;
 }
 
@@ -352,30 +415,42 @@ Deno.serve(async (req) => {
         );
       }
 
-      const results: { nunota: number; success: boolean; action: string; error?: string }[] = [];
+      const results: { nunota: number; success: boolean; action: string; error?: string; response?: unknown }[] = [];
 
       for (const p of pedidos) {
+        const nunota = parseInt(String(p.nunota), 10);
+        const ordemCarga = parseInt(String(p.ordemCarga), 10);
+        const status = parseInt(String(p.status), 10);
+
         try {
-          // Check if record exists
-          const checkSql = `SELECT 1 FROM AD_NFACERTO WHERE NUNOTA = ${parseInt(String(p.nunota), 10)} AND ORDEMCARGA = ${parseInt(String(p.ordemCarga), 10)}`;
+          // Check if record exists in AD_NFACERTO
+          const checkSql = `SELECT NUNOTA, ORDEMCARGA, STATUS FROM AD_NFACERTO WHERE NUNOTA = ${nunota} AND ORDEMCARGA = ${ordemCarga}`;
           const checkResult = await executeQuery(checkSql);
           const existing = parseDbExplorerResponse(checkResult);
 
           if (existing.length === 0) {
-            // INSERT
-            const insertSql = `INSERT INTO AD_NFACERTO (NUNOTA, ORDEMCARGA, STATUS) VALUES (${parseInt(String(p.nunota), 10)}, ${parseInt(String(p.ordemCarga), 10)}, ${parseInt(String(p.status), 10)})`;
-            await executeQuery(insertSql);
-            results.push({ nunota: p.nunota, success: true, action: 'inserted' });
+            // INSERT via DatasetSP.save
+            console.log(`[Sankhya] INSERT AD_NFACERTO: NUNOTA=${nunota}, OC=${ordemCarga}, STATUS=${status}`);
+            const saveResult = await saveCrudRecord('AD_NFACERTO', {
+              NUNOTA: nunota,
+              ORDEMCARGA: ordemCarga,
+              STATUS: status,
+            });
+            results.push({ nunota, success: true, action: 'inserted', response: saveResult });
           } else {
-            // UPDATE
-            const updateSql = `UPDATE AD_NFACERTO SET STATUS = ${parseInt(String(p.status), 10)} WHERE NUNOTA = ${parseInt(String(p.nunota), 10)} AND ORDEMCARGA = ${parseInt(String(p.ordemCarga), 10)}`;
-            await executeQuery(updateSql);
-            results.push({ nunota: p.nunota, success: true, action: 'updated' });
+            // UPDATE via DatasetSP.save
+            console.log(`[Sankhya] UPDATE AD_NFACERTO: NUNOTA=${nunota}, OC=${ordemCarga}, STATUS=${status}`);
+            const saveResult = await saveCrudRecord('AD_NFACERTO', {
+              NUNOTA: nunota,
+              ORDEMCARGA: ordemCarga,
+              STATUS: status,
+            });
+            results.push({ nunota, success: true, action: 'updated', response: saveResult });
           }
         } catch (e) {
           const errMsg = e instanceof Error ? e.message : 'Erro desconhecido';
-          console.error(`[Sankhya] Erro ao salvar AD_NFACERTO para NUNOTA ${p.nunota}:`, errMsg);
-          results.push({ nunota: p.nunota, success: false, action: 'error', error: errMsg });
+          console.error(`[Sankhya] Erro ao salvar AD_NFACERTO para NUNOTA ${nunota}:`, errMsg);
+          results.push({ nunota, success: false, action: 'error', error: errMsg });
         }
       }
 
