@@ -14,7 +14,6 @@ const tokenCache: TokenCache = {
 };
 
 async function authenticate(): Promise<string> {
-  // Return cached token if still valid (with 60s buffer)
   if (tokenCache.accessToken && Date.now() < tokenCache.tokenExpiry - 60000) {
     return tokenCache.accessToken;
   }
@@ -58,28 +57,26 @@ async function authenticate(): Promise<string> {
   return data.access_token;
 }
 
-async function sankhyaRequest(
-  method: string,
-  path: string,
-  body?: unknown
-): Promise<Response> {
+async function executeQuery(sql: string): Promise<unknown> {
   const token = await authenticate();
   const gatewayUrl = Deno.env.get('SANKHYA_GATEWAY_URL')!;
 
-  const url = `${gatewayUrl}${path}`;
-  console.log(`[Sankhya] ${method} ${url}`);
+  const url = `${gatewayUrl}/gateway/v1/mge/service.sbr?serviceName=DbExplorerSP.executeQuery&outputType=json`;
+  console.log(`[Sankhya] Executando query via DbExplorerSP.executeQuery`);
 
   const headers: Record<string, string> = {
     'Authorization': `Bearer ${token}`,
     'Content-Type': 'application/json',
   };
 
-  const fetchOptions: RequestInit = { method, headers };
-  if (body && (method === 'POST' || method === 'PUT')) {
-    fetchOptions.body = JSON.stringify(body);
-  }
+  const body = JSON.stringify({
+    serviceName: 'DbExplorerSP.executeQuery',
+    requestBody: {
+      sql: sql,
+    },
+  });
 
-  const response = await fetch(url, fetchOptions);
+  let response = await fetch(url, { method: 'POST', headers, body });
 
   // If 401, try re-authenticating once
   if (response.status === 401) {
@@ -87,10 +84,154 @@ async function sankhyaRequest(
     tokenCache.accessToken = null;
     const newToken = await authenticate();
     headers['Authorization'] = `Bearer ${newToken}`;
-    return fetch(url, { method, headers, body: fetchOptions.body as string });
+    response = await fetch(url, { method: 'POST', headers, body });
   }
 
-  return response;
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('[Sankhya] Erro na query:', response.status, errorText);
+    throw new Error(`Erro na query Sankhya: ${response.status} - ${errorText}`);
+  }
+
+  const data = await response.json();
+  return data;
+}
+
+function buildCabecalhoQuery(ordemCarga: string): string {
+  return `
+SELECT
+  ORD.ORDEMCARGA,
+  ORD.ORDEMCARGA as OCBAR,
+  PAR.NOMEPARC,
+  PAR.CODPARC,
+  CONVERT(VARCHAR(10), ORD.AD_DATAHORASADA, 103) AS AD_DATAHORASADA,
+  FORMAT(ORD.VLRFRETE, 'C', 'pt-BR') AS VLRFRETE,
+  CASE WHEN REG.CODREG = 11200
+    THEN
+      CASE
+        WHEN MAX(IMP.AD_ONOFF) = 'ON' THEN 'SP-ON'
+        ELSE 'SP-OFF' END
+    ELSE RTRIM(REG.NOMEREG)
+  END AS NOMEREG,
+  CONVERT(VARCHAR(10), DTINIC, 103) AS DATAAT,
+  SUM(IMP.VALOR_NOTA) AS VALOR,
+  SUM(IMP.PESO_KG) AS PESO,
+  SUM(IMP.M3) AS M3,
+  COUNT(IMP.NUNOTA) AS QTDPEDIDO,
+  PC.OPCAO AS TIPVEI,
+  COUNT(DISTINCT IMP.CODIGO_DO_CLIENTE) AS QTDCLI,
+  ORD.AD_KTTOT,
+  ORD.AD_NROTA,
+  ORD.AD_HRINIRT
+FROM TGFORD ORD
+JOIN IMPORDEMCARGA IMP ON IMP.ORDEMCARGA = ORD.ORDEMCARGA
+JOIN TSIREG REG ON REG.CODREG = ORD.CODREG
+LEFT JOIN TGFPAR PAR ON PAR.CODPARC = ORD.CODPARCMOTORISTA
+LEFT JOIN TDDOPC PC ON PC.VALOR = ORD.AD_TIPVEI AND PC.NUCAMPO = 9999990461
+WHERE ORD.ORDEMCARGA = ${parseInt(ordemCarga, 10)}
+GROUP BY ORD.ORDEMCARGA,
+  PAR.NOMEPARC,
+  PAR.CODPARC,
+  REG.NOMEREG,
+  ORD.VLRFRETE,
+  ORD.AD_DATAHORASADA,
+  PC.OPCAO,
+  REG.CODREG,
+  DTINIC,
+  ORD.AD_KTTOT,
+  ORD.AD_NROTA,
+  ORD.AD_HRINIRT
+  `.trim();
+}
+
+function buildPedidosQuery(ordemCarga: string): string {
+  return `
+SELECT
+  ORD.ORDEMCARGA,
+  VEI.PLACA,
+  UPPER(LEFT(LOWER(PAR.NOMEPARC), 1)) + LOWER(SUBSTRING(PAR.NOMEPARC, 2, LEN(PAR.NOMEPARC))) AS NOMEPARC,
+  PAR.CODPARC,
+  UPPER(LEFT(LOWER(VEI.MARCAMODELO), 1)) + LOWER(SUBSTRING(VEI.MARCAMODELO, 2, LEN(VEI.MARCAMODELO))) AS MARCAMODELO,
+  ORD.AD_DATAHORASADA,
+  ORD.VLRFRETE,
+  UPPER(LEFT(LOWER(REG.NOMEREG), 1)) + LOWER(SUBSTRING(REG.NOMEREG, 2, LEN(REG.NOMEREG))) AS NOMEREG,
+  GETDATE() AS DATAAT,
+  IMP.RUA + ', ' + IMP.NUMERO + ' - ' + IMP.BAIRRO + ' - ' + IMP.MUNICIPIO + ' - ' + IMP.ESTADO + ' - ' + IMP.CEP AS ENDERECO,
+  IMP.CODIGO_DO_CLIENTE,
+  IMP.DTNEG,
+  UPPER(LEFT(LOWER(IMP.NOME_DO_CLIENTE), 1)) + LOWER(SUBSTRING(IMP.NOME_DO_CLIENTE, 2, LEN(IMP.NOME_DO_CLIENTE))) AS NOME_DO_CLIENTE,
+  IMP.COMPLEMENTO,
+  IMP.VALOR_NOTA,
+  IMP.PESO_KG,
+  IMP.M3 AS M3UN,
+  IMP.TEMPO_DE_ATENDIMENTO_NO_CLIENTE_MIN,
+  IMP.INICIO_DO_INTERVALO_PERMITIDO,
+  IMP.FIM_DO_INTERVALO_PERMITIDO,
+  IMP.INICIO_DO_INTERVALO_PERMITIDO2,
+  IMP.FIM_DO_INTERVALO_PERMITIDO2,
+  IMP.TELEFONE,
+  IMP.NUNOTA,
+  IMP.NUMNOTA,
+  IMP.DESCRTIPPARC,
+  CASE WHEN CAB.AD_CARTASELO = 'SIM' THEN 'CARTA SELO' ELSE '' END AS CARTASELO,
+  CASE WHEN IMP.AGENDAMENTO = 'S' THEN 'AGENDAMENTO' ELSE '' END AS AGENDAMENTO,
+  CASE WHEN CAB.AD_PRIOR = 'S' THEN 'PRIORIDADE'
+    WHEN EXISTS (
+      SELECT 1
+      FROM AD_DIAATE DIA
+      WHERE DIA.CODCID = PAR2.CODCID ) THEN 'PRIORIDADE'
+    ELSE '' END AS PRIORIDADE,
+  CAB.SEQCARGA,
+  CASE WHEN EXISTS (
+    SELECT 1
+    FROM AD_NFACERTO AC
+    WHERE AC.NUNOTA = IMP.NUNOTA
+    AND AC.STATUS = 3) THEN 'REENTREGA'
+    ELSE '' END AS REENT
+FROM TGFORD ORD
+JOIN IMPORDEMCARGA IMP ON IMP.ORDEMCARGA = ORD.ORDEMCARGA
+JOIN TGFCAB CAB ON CAB.NUNOTA = IMP.NUNOTA
+JOIN TSIREG REG ON REG.CODREG = ORD.CODREG
+LEFT JOIN TGFPAR PAR ON PAR.CODPARC = ORD.CODPARCMOTORISTA
+LEFT JOIN TGFVEI VEI ON VEI.CODPARC = ORD.CODPARCMOTORISTA
+LEFT JOIN TGFPAR PAR2 ON PAR2.CODPARC = IMP.CODIGO_DO_CLIENTE
+WHERE ORD.ORDEMCARGA = ${parseInt(ordemCarga, 10)}
+ORDER BY CAB.SEQCARGA
+  `.trim();
+}
+
+// Parse Sankhya DbExplorer response into array of objects
+function parseDbExplorerResponse(data: any): Record<string, any>[] {
+  try {
+    const responseBody = data?.responseBody || data?.requestBody;
+    if (!responseBody) {
+      console.log('[Sankhya] Response structure:', JSON.stringify(data).substring(0, 500));
+      // Try to parse rows directly if the response has a different structure
+      if (data?.rows || data?.registros) {
+        return data.rows || data.registros;
+      }
+      return [];
+    }
+
+    const rows = responseBody?.rows || [];
+    const fieldsMetadata = responseBody?.fieldsMetadata || [];
+
+    if (!Array.isArray(rows)) return [];
+
+    // Map rows to objects using field metadata
+    return rows.map((row: any[]) => {
+      const obj: Record<string, any> = {};
+      fieldsMetadata.forEach((field: any, index: number) => {
+        const fieldName = field?.name || field?.label || `field_${index}`;
+        obj[fieldName] = row[index] ?? null;
+      });
+      return obj;
+    });
+  } catch (e) {
+    console.error('[Sankhya] Erro ao parsear resposta:', e);
+    console.log('[Sankhya] Raw data:', JSON.stringify(data).substring(0, 1000));
+    return [];
+  }
 }
 
 Deno.serve(async (req) => {
@@ -99,7 +240,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { action, method, path, body } = await req.json();
+    const { action, method, path, body, ordemCarga } = await req.json();
 
     // Action: test - just test authentication
     if (action === 'test') {
@@ -114,7 +255,56 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Action: request - proxy any Sankhya API call
+    // Action: getCabecalho - get ordem de carga header data
+    if (action === 'getCabecalho') {
+      if (!ordemCarga) {
+        return new Response(
+          JSON.stringify({ success: false, error: 'ordemCarga é obrigatório' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const sql = buildCabecalhoQuery(ordemCarga);
+      console.log('[Sankhya] Query cabeçalho para OC:', ordemCarga);
+      const rawData = await executeQuery(sql);
+      const records = parseDbExplorerResponse(rawData);
+
+      return new Response(
+        JSON.stringify({
+          success: records.length > 0,
+          data: records.length > 0 ? records[0] : null,
+          rawResponse: rawData,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Action: getPedidos - get pedidos for ordem de carga
+    if (action === 'getPedidos') {
+      if (!ordemCarga) {
+        return new Response(
+          JSON.stringify({ success: false, error: 'ordemCarga é obrigatório' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const sql = buildPedidosQuery(ordemCarga);
+      console.log('[Sankhya] Query pedidos para OC:', ordemCarga);
+      const rawData = await executeQuery(sql);
+      const records = parseDbExplorerResponse(rawData);
+
+      return new Response(
+        JSON.stringify({
+          success: records.length > 0,
+          data: records,
+          total: records.length,
+          rawResponse: rawData,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Action: request - proxy any Sankhya API call (legacy)
     if (action === 'request') {
       if (!path) {
         return new Response(
@@ -123,15 +313,26 @@ Deno.serve(async (req) => {
         );
       }
 
-      const response = await sankhyaRequest(method || 'GET', path, body);
+      const token = await authenticate();
+      const gatewayUrl = Deno.env.get('SANKHYA_GATEWAY_URL')!;
+      const url = `${gatewayUrl}${path}`;
+      console.log(`[Sankhya] ${method || 'GET'} ${url}`);
+
+      const headers: Record<string, string> = {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      };
+
+      const fetchOptions: RequestInit = { method: method || 'GET', headers };
+      if (body && (method === 'POST' || method === 'PUT')) {
+        fetchOptions.body = JSON.stringify(body);
+      }
+
+      const response = await fetch(url, fetchOptions);
       const data = await response.json();
 
       return new Response(
-        JSON.stringify({
-          success: response.ok,
-          status: response.status,
-          data,
-        }),
+        JSON.stringify({ success: response.ok, status: response.status, data }),
         {
           status: response.ok ? 200 : response.status,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -140,7 +341,7 @@ Deno.serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ success: false, error: 'Action inválida. Use "test" ou "request".' }),
+      JSON.stringify({ success: false, error: 'Action inválida. Use "test", "getCabecalho", "getPedidos" ou "request".' }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
