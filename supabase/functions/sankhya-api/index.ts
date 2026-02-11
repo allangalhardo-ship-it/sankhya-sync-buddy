@@ -22,17 +22,20 @@ async function authenticate(): Promise<string> {
   const gatewayUrl = Deno.env.get('SANKHYA_GATEWAY_URL');
   const clientId = Deno.env.get('SANKHYA_CLIENT_ID');
   const clientSecret = Deno.env.get('SANKHYA_CLIENT_SECRET');
+  const xToken = Deno.env.get('SANKHYA_X_TOKEN');
 
   if (!gatewayUrl) throw new Error('SANKHYA_GATEWAY_URL não configurada');
   if (!clientId) throw new Error('SANKHYA_CLIENT_ID não configurado');
   if (!clientSecret) throw new Error('SANKHYA_CLIENT_SECRET não configurado');
+  if (!xToken) throw new Error('SANKHYA_X_TOKEN não configurado');
 
-  console.log('[Sankhya] Autenticando...');
+  console.log('[Sankhya] Autenticando em:', `${gatewayUrl}/authenticate`);
 
-  const response = await fetch(`${gatewayUrl}/gateway/v1/mge/token`, {
+  const response = await fetch(`${gatewayUrl}/authenticate`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
+      'X-Token': xToken,
     },
     body: new URLSearchParams({
       grant_type: 'client_credentials',
