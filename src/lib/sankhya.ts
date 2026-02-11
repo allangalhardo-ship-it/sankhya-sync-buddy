@@ -44,6 +44,7 @@ export interface PedidoData {
   M3UN: number;
   TELEFONE: string;
   NUNOTA: number;
+  STATUS_ACERTO?: number | null;
   NUMNOTA: number;
   DESCRTIPPARC: string;
   CARTASELO: string;

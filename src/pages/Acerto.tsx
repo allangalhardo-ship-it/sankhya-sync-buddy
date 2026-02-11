@@ -83,6 +83,23 @@ const Acerto = () => {
       const cab = cabecalhoRes.data as CabecalhoData;
       const pedidosData = (pedidosRes.data || []) as PedidoData[];
 
+      const sankhyaStatusToEntrega = (status: unknown): StatusEntrega => {
+        const n =
+          typeof status === "string" ? parseInt(status, 10) : typeof status === "number" ? status : NaN;
+
+        switch (n) {
+          case 1:
+            return "entregue";
+          case 5:
+            return "devolvido";
+          case 3:
+            return "reentrega";
+          case 8:
+          default:
+            return "pendente";
+        }
+      };
+
       // Build OrdemCarga from real Sankhya data
       const ordem: OrdemCarga = {
         numero: String(cab.ORDEMCARGA),
@@ -93,7 +110,7 @@ const Acerto = () => {
           numero_unico: String(p.NUMNOTA || ""),
           cliente_nome: p.NOME_DO_CLIENTE || "Cliente",
           endereco: p.ENDERECO || "",
-          status_entrega: "pendente" as StatusEntrega,
+          status_entrega: sankhyaStatusToEntrega(p.STATUS_ACERTO),
           observacao: [p.CARTASELO, p.AGENDAMENTO, p.PRIORIDADE].filter(Boolean).join(" | "),
           is_reentrega: p.REENT === "REENTREGA",
         })),
