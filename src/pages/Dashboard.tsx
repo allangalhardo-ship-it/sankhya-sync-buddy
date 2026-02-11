@@ -2,7 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ClipboardCheck, PackageX, LogOut, User } from "lucide-react";
+import { ClipboardCheck, LogOut, User } from "lucide-react";
 import FRLogo from "@/components/FRLogo";
 
 const Dashboard = () => {
@@ -45,39 +45,20 @@ const Dashboard = () => {
           <p className="text-muted-foreground mt-1">Selecione o tipo de checklist para iniciar o acerto.</p>
         </div>
 
-        <div className="grid gap-6 sm:grid-cols-2 max-w-2xl mx-auto">
-          {/* Checklist de Entrega */}
+        <div className="max-w-md mx-auto">
           <Card
-            className="cursor-pointer transition-all hover:shadow-lg hover:-translate-y-1 border-2 border-l-4 border-l-success hover:border-success/50 group"
+            className="cursor-pointer transition-all hover:shadow-lg hover:-translate-y-1 border-2 border-l-4 border-l-primary hover:border-primary/50 group"
             onClick={() => navigate("/acerto/entrega")}
           >
             <CardHeader className="pb-3">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-success/10 group-hover:bg-success/20 transition-colors">
-                <ClipboardCheck className="h-7 w-7 text-success" />
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 group-hover:bg-primary/20 transition-colors">
+                <ClipboardCheck className="h-7 w-7 text-primary" />
               </div>
             </CardHeader>
             <CardContent>
-              <CardTitle className="text-xl mb-2">Checklist de Entrega</CardTitle>
+              <CardTitle className="text-xl mb-2">Iniciar Acerto</CardTitle>
               <CardDescription>
-                Registre as entregas realizadas, devoluções e reentregas do romaneio.
-              </CardDescription>
-            </CardContent>
-          </Card>
-
-          {/* Checklist de Devolução */}
-          <Card
-            className="cursor-pointer transition-all hover:shadow-lg hover:-translate-y-1 border-2 border-l-4 border-l-warning hover:border-warning/50 group"
-            onClick={() => navigate("/acerto/devolucao")}
-          >
-            <CardHeader className="pb-3">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-warning/10 group-hover:bg-warning/20 transition-colors">
-                <PackageX className="h-7 w-7 text-warning" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <CardTitle className="text-xl mb-2">Checklist de Devolução</CardTitle>
-              <CardDescription>
-                Confira e registre os produtos devolvidos do romaneio.
+                Escaneie a ordem de carga para iniciar o acerto de romaneio. Devoluções serão tratadas automaticamente.
               </CardDescription>
             </CardContent>
           </Card>

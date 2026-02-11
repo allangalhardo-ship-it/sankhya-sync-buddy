@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import ChecklistDevolucaoDialog, { DevolucaoInfo } from "@/components/ChecklistDevolucaoDialog";
 import {
   ArrowLeft, ScanBarcode, Loader2, Truck, User, MapPin,
   CheckCircle2, XCircle, RotateCcw, Clock, Camera, Save, Send
@@ -55,7 +56,8 @@ const Acerto = () => {
   const [ordemCarga, setOrdemCarga] = useState<OrdemCarga | null>(null);
   const [acertoId, setAcertoId] = useState<string | null>(null);
   const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
-
+  const [showDevolucaoDialog, setShowDevolucaoDialog] = useState(false);
+  const [pendingDevolucaoFinalize, setPendingDevolucaoFinalize] = useState(false);
   const tipoLabel = tipo === "entrega" ? "Entrega" : "Devolução";
 
   const handleScan = async () => {
@@ -207,11 +209,62 @@ const Acerto = () => {
     setOrdemCarga(updated);
   };
 
+  const devolvidos = ordemCarga?.pedidos.filter((p) => p.status_entrega === "devolvido") ?? [];
+
   const handleFinalize = async () => {
+    if (!ordemCarga || !acertoId) return;
+
+    // If there are devolvidos and we haven't shown the dialog yet, show it
+    if (devolvidos.length > 0 && !pendingDevolucaoFinalize) {
+      setShowDevolucaoDialog(true);
+      return;
+    }
+
+    await doFinalize();
+  };
+
+  const handleDevolucaoConfirm = async (devolucoes: DevolucaoInfo[]) => {
+    // Store devolução info in observacao of each devolvido pedido
+    if (ordemCarga) {
+      const updated = { ...ordemCarga };
+      for (const dev of devolucoes) {
+        const idx = updated.pedidos.findIndex((p) => p.numero_pedido === dev.nunota);
+        if (idx >= 0) {
+          const info = [
+            `[DEVOLUÇÃO ${dev.tipo_devolucao.toUpperCase()}]`,
+            dev.motivo ? `Motivo: ${dev.motivo}` : "",
+            dev.nf_fr ? `NF FR: ${dev.nf_fr}` : "",
+            dev.nf_cliente ? `NF Cliente: ${dev.nf_cliente}` : "",
+            dev.parceiro ? `Parceiro: ${dev.parceiro}` : "",
+            dev.vendedor ? `Vendedor: ${dev.vendedor}` : "",
+            dev.agregado ? `Agregado: ${dev.agregado}` : "",
+            `Conferência: ${dev.conferencia_produtos === "sim" ? "Sim" : "Não"}`,
+            `Desconta Taxa: ${dev.desconta_taxa_vendedor === "sim" ? "Sim" : "Não"}`,
+          ]
+            .filter(Boolean)
+            .join(" | ");
+          updated.pedidos[idx].observacao = info;
+        }
+      }
+      setOrdemCarga(updated);
+    }
+
+    setPendingDevolucaoFinalize(true);
+    setShowDevolucaoDialog(false);
+  };
+
+  // Effect-like: trigger finalize after devolução confirm
+  // We use a flag + useEffect pattern via the state
+  if (pendingDevolucaoFinalize && !saving) {
+    setPendingDevolucaoFinalize(false);
+    // Use setTimeout to avoid calling setState during render
+    setTimeout(() => doFinalize(), 0);
+  }
+
+  const doFinalize = async () => {
     if (!ordemCarga || !acertoId) return;
     setSaving(true);
 
-    // Status mapping: app → Sankhya AD_NFACERTO
     const statusMap: Record<StatusEntrega, number> = {
       pendente: 8,
       entregue: 1,
@@ -220,7 +273,6 @@ const Acerto = () => {
     };
 
     try {
-      // Upload photos and update pedidos in local DB
       for (const pedido of ordemCarga.pedidos) {
         let fotoUrl = pedido.foto_canhoto_url;
 
@@ -237,7 +289,6 @@ const Acerto = () => {
           }
         }
 
-        // Update pedido in database
         if (pedido.id) {
           await supabase
             .from("acerto_pedidos")
@@ -260,7 +311,6 @@ const Acerto = () => {
         }
       }
 
-      // Save to Sankhya AD_NFACERTO
       const pedidosSankhya = ordemCarga.pedidos
         .filter((p) => p.numero_pedido !== "Sem pedidos")
         .map((p) => ({
@@ -283,7 +333,6 @@ const Acerto = () => {
         }
       }
 
-      // Finalize acerto
       await supabase
         .from("acertos")
         .update({ status: "finalizado", finalizado_at: new Date().toISOString() })
@@ -525,6 +574,17 @@ const Acerto = () => {
           </>
         )}
       </main>
+
+      <ChecklistDevolucaoDialog
+        open={showDevolucaoDialog}
+        onClose={() => setShowDevolucaoDialog(false)}
+        onConfirm={handleDevolucaoConfirm}
+        pedidosDevolvidos={devolvidos.map((p) => ({
+          numero_pedido: p.numero_pedido,
+          cliente_nome: p.cliente_nome,
+        }))}
+        saving={saving}
+      />
     </div>
   );
 };
