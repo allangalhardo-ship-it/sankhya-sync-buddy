@@ -97,17 +97,18 @@ async function executeQuery(sql: string): Promise<unknown> {
   return data;
 }
 
-async function saveCrudRecord(rootEntity: string, fields: Record<string, any>): Promise<unknown> {
+async function saveCrudRecord(entityName: string, fields: Record<string, any>): Promise<unknown> {
   const token = await authenticate();
   const gatewayUrl = Deno.env.get('SANKHYA_GATEWAY_URL')!;
 
-  const url = `${gatewayUrl}/gateway/v1/mge/service.sbr?serviceName=DatasetSP.save&outputType=json`;
-  console.log(`[Sankhya] Salvando registro via DatasetSP.save - Entity: ${rootEntity}`);
+  const url = `${gatewayUrl}/gateway/v1/mge/service.sbr?serviceName=CRUDServiceProvider.saveRecord&outputType=json`;
+  console.log(`[Sankhya] Salvando registro via CRUDServiceProvider.saveRecord - Entity: ${entityName}`);
 
-  const row: Record<string, any> = {};
+  // Build localFields in XML-JSON format: { FIELD: { "$": "value" } }
+  const localFields: Record<string, any> = {};
   const fieldList: string[] = [];
   for (const [key, value] of Object.entries(fields)) {
-    row[key] = { $: String(value) };
+    localFields[key] = { "$": String(value) };
     fieldList.push(key);
   }
 
@@ -117,22 +118,24 @@ async function saveCrudRecord(rootEntity: string, fields: Record<string, any>): 
   };
 
   const requestBody = JSON.stringify({
-    serviceName: 'DatasetSP.save',
+    serviceName: 'CRUDServiceProvider.saveRecord',
     requestBody: {
       dataSet: {
-        rootEntity,
-        includePresentationFields: 'S',
+        rootEntity: entityName,
+        includePresentationFields: 'N',
+        dataRow: {
+          localFields,
+        },
         entity: {
           fieldset: {
             list: fieldList.join(','),
           },
         },
-        rows: {
-          row,
-        },
       },
     },
   });
+
+  console.log('[Sankhya] Payload CRUDServiceProvider.saveRecord:', requestBody);
 
   let response = await fetch(url, { method: 'POST', headers, body: requestBody });
 
@@ -151,10 +154,10 @@ async function saveCrudRecord(rootEntity: string, fields: Record<string, any>): 
   }
 
   const data = await response.json();
-  console.log('[Sankhya] Resposta DatasetSP.save:', JSON.stringify(data).substring(0, 500));
+  console.log('[Sankhya] Resposta CRUDServiceProvider:', JSON.stringify(data).substring(0, 1000));
 
   if (data.status === '0' || data.status === 0) {
-    throw new Error(`Erro Sankhya: ${data.statusMessage || 'Erro desconhecido'}`);
+    throw new Error(`Erro Sankhya: ${data.statusMessage || JSON.stringify(data.tsError) || 'Erro desconhecido'}`);
   }
 
   return data;
@@ -429,7 +432,7 @@ Deno.serve(async (req) => {
           const existing = parseDbExplorerResponse(checkResult);
 
           if (existing.length === 0) {
-            // INSERT via DatasetSP.save
+            // INSERT via CRUDServiceProvider.saveRecord
             console.log(`[Sankhya] INSERT AD_NFACERTO: NUNOTA=${nunota}, OC=${ordemCarga}, STATUS=${status}`);
             const saveResult = await saveCrudRecord('AD_NFACERTO', {
               NUNOTA: nunota,
@@ -438,7 +441,7 @@ Deno.serve(async (req) => {
             });
             results.push({ nunota, success: true, action: 'inserted', response: saveResult });
           } else {
-            // UPDATE via DatasetSP.save
+            // UPDATE via CRUDServiceProvider.saveRecord (same call, PK fields identify the record)
             console.log(`[Sankhya] UPDATE AD_NFACERTO: NUNOTA=${nunota}, OC=${ordemCarga}, STATUS=${status}`);
             const saveResult = await saveCrudRecord('AD_NFACERTO', {
               NUNOTA: nunota,
