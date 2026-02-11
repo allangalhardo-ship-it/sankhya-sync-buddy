@@ -14,6 +14,65 @@ export type Database = {
   }
   public: {
     Tables: {
+      acerto_devolucoes: {
+        Row: {
+          acerto_id: string
+          agregado: string | null
+          cliente_nome: string | null
+          conferencia_produtos: string
+          created_at: string
+          desconta_taxa_vendedor: string
+          id: string
+          motivo: string | null
+          nf_cliente: string | null
+          nf_fr: string | null
+          numero_pedido: string
+          parceiro: string | null
+          tipo_devolucao: string
+          vendedor: string | null
+        }
+        Insert: {
+          acerto_id: string
+          agregado?: string | null
+          cliente_nome?: string | null
+          conferencia_produtos?: string
+          created_at?: string
+          desconta_taxa_vendedor?: string
+          id?: string
+          motivo?: string | null
+          nf_cliente?: string | null
+          nf_fr?: string | null
+          numero_pedido: string
+          parceiro?: string | null
+          tipo_devolucao?: string
+          vendedor?: string | null
+        }
+        Update: {
+          acerto_id?: string
+          agregado?: string | null
+          cliente_nome?: string | null
+          conferencia_produtos?: string
+          created_at?: string
+          desconta_taxa_vendedor?: string
+          id?: string
+          motivo?: string | null
+          nf_cliente?: string | null
+          nf_fr?: string | null
+          numero_pedido?: string
+          parceiro?: string | null
+          tipo_devolucao?: string
+          vendedor?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "acerto_devolucoes_acerto_id_fkey"
+            columns: ["acerto_id"]
+            isOneToOne: false
+            referencedRelation: "acertos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       acerto_pedidos: {
         Row: {
           acerto_id: string
