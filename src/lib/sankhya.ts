@@ -9,23 +9,14 @@ export interface SankhyaResponse<T = unknown> {
 }
 
 export const sankhya = {
-  /**
-   * Testa a conexão com a API Sankhya
-   */
   async testConnection(): Promise<SankhyaResponse> {
     const { data, error } = await supabase.functions.invoke("sankhya-api", {
       body: { action: "test" },
     });
-
-    if (error) {
-      return { success: false, error: error.message };
-    }
+    if (error) return { success: false, error: error.message };
     return data;
   },
 
-  /**
-   * Faz uma requisição genérica à API Sankhya
-   */
   async request<T = unknown>(
     method: string,
     path: string,
@@ -34,14 +25,18 @@ export const sankhya = {
     const { data, error } = await supabase.functions.invoke("sankhya-api", {
       body: { action: "request", method, path, body },
     });
-
-    if (error) {
-      return { success: false, error: error.message };
-    }
+    if (error) return { success: false, error: error.message };
     return data;
   },
 
-  // Atalhos para endpoints comuns
+  async getOrdemCarga(codigo: string) {
+    return this.request("GET", `/api/v1/ordens-carga/${codigo}`);
+  },
+
+  async getPedidosOrdemCarga(codigo: string) {
+    return this.request("GET", `/api/v1/ordens-carga/${codigo}/pedidos`);
+  },
+
   async getClientes() {
     return this.request("GET", "/api/v1/clientes");
   },
@@ -50,19 +45,7 @@ export const sankhya = {
     return this.request("GET", "/api/v1/produtos");
   },
 
-  async getEstoque(codigoProduto: string) {
-    return this.request("GET", `/api/v1/estoque/produtos/${codigoProduto}`);
-  },
-
-  async getPedidos() {
-    return this.request("GET", "/api/v1/pedidos");
-  },
-
   async getEmpresas() {
     return this.request("GET", "/api/v1/empresas");
-  },
-
-  async getVendedores() {
-    return this.request("GET", "/api/v1/vendedores");
   },
 };

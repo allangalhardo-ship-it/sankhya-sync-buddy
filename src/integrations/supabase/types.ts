@@ -14,7 +14,113 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      acerto_pedidos: {
+        Row: {
+          acerto_id: string
+          cliente_nome: string | null
+          created_at: string
+          endereco: string | null
+          foto_canhoto_url: string | null
+          id: string
+          numero_pedido: string
+          numero_unico: string | null
+          observacao: string | null
+          status_entrega: string
+          updated_at: string
+        }
+        Insert: {
+          acerto_id: string
+          cliente_nome?: string | null
+          created_at?: string
+          endereco?: string | null
+          foto_canhoto_url?: string | null
+          id?: string
+          numero_pedido: string
+          numero_unico?: string | null
+          observacao?: string | null
+          status_entrega?: string
+          updated_at?: string
+        }
+        Update: {
+          acerto_id?: string
+          cliente_nome?: string | null
+          created_at?: string
+          endereco?: string | null
+          foto_canhoto_url?: string | null
+          id?: string
+          numero_pedido?: string
+          numero_unico?: string | null
+          observacao?: string | null
+          status_entrega?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "acerto_pedidos_acerto_id_fkey"
+            columns: ["acerto_id"]
+            isOneToOne: false
+            referencedRelation: "acertos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      acertos: {
+        Row: {
+          created_at: string
+          finalizado_at: string | null
+          id: string
+          motorista_nome: string | null
+          numero_ordem_carga: string
+          placa: string | null
+          status: string
+          tipo: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          finalizado_at?: string | null
+          id?: string
+          motorista_nome?: string | null
+          numero_ordem_carga: string
+          placa?: string | null
+          status?: string
+          tipo: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          finalizado_at?: string | null
+          id?: string
+          motorista_nome?: string | null
+          numero_ordem_carga?: string
+          placa?: string | null
+          status?: string
+          tipo?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          id: string
+          nome: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          nome?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          nome?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
