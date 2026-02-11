@@ -79,6 +79,14 @@ export const sankhya = {
     return data;
   },
 
+  async saveAcerto(pedidos: { nunota: number; ordemCarga: number; status: number }[]): Promise<SankhyaResponse> {
+    const { data, error } = await supabase.functions.invoke("sankhya-api", {
+      body: { action: "saveAcerto", pedidos },
+    });
+    if (error) return { success: false, error: error.message };
+    return data;
+  },
+
   async request<T = unknown>(
     method: string,
     path: string,

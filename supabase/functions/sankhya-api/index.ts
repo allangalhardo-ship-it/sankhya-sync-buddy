@@ -240,7 +240,8 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { action, method, path, body, ordemCarga } = await req.json();
+    const body = await req.json();
+    const { action, method, path, ordemCarga } = body;
 
     // Action: test - just test authentication
     if (action === 'test') {
@@ -340,8 +341,52 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Action: saveAcerto - insert/update AD_NFACERTO status for each pedido
+    if (action === 'saveAcerto') {
+      const pedidos = body.pedidos;
+      // pedidos expected: [{ nunota: number, ordemCarga: number, status: number }]
+      if (!Array.isArray(pedidos) || pedidos.length === 0) {
+        return new Response(
+          JSON.stringify({ success: false, error: 'pedidos é obrigatório (array com nunota, ordemCarga, status)' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const results: { nunota: number; success: boolean; action: string; error?: string }[] = [];
+
+      for (const p of pedidos) {
+        try {
+          // Check if record exists
+          const checkSql = `SELECT 1 FROM AD_NFACERTO WHERE NUNOTA = ${parseInt(String(p.nunota), 10)} AND ORDEMCARGA = ${parseInt(String(p.ordemCarga), 10)}`;
+          const checkResult = await executeQuery(checkSql);
+          const existing = parseDbExplorerResponse(checkResult);
+
+          if (existing.length === 0) {
+            // INSERT
+            const insertSql = `INSERT INTO AD_NFACERTO (NUNOTA, ORDEMCARGA, STATUS) VALUES (${parseInt(String(p.nunota), 10)}, ${parseInt(String(p.ordemCarga), 10)}, ${parseInt(String(p.status), 10)})`;
+            await executeQuery(insertSql);
+            results.push({ nunota: p.nunota, success: true, action: 'inserted' });
+          } else {
+            // UPDATE
+            const updateSql = `UPDATE AD_NFACERTO SET STATUS = ${parseInt(String(p.status), 10)} WHERE NUNOTA = ${parseInt(String(p.nunota), 10)} AND ORDEMCARGA = ${parseInt(String(p.ordemCarga), 10)}`;
+            await executeQuery(updateSql);
+            results.push({ nunota: p.nunota, success: true, action: 'updated' });
+          }
+        } catch (e) {
+          const errMsg = e instanceof Error ? e.message : 'Erro desconhecido';
+          console.error(`[Sankhya] Erro ao salvar AD_NFACERTO para NUNOTA ${p.nunota}:`, errMsg);
+          results.push({ nunota: p.nunota, success: false, action: 'error', error: errMsg });
+        }
+      }
+
+      return new Response(
+        JSON.stringify({ success: results.every(r => r.success), results }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     return new Response(
-      JSON.stringify({ success: false, error: 'Action inválida. Use "test", "getCabecalho", "getPedidos" ou "request".' }),
+      JSON.stringify({ success: false, error: 'Action inválida. Use "test", "getCabecalho", "getPedidos", "saveAcerto" ou "request".' }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
