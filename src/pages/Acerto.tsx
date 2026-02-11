@@ -579,10 +579,13 @@ const Acerto = () => {
         open={showDevolucaoDialog}
         onClose={() => setShowDevolucaoDialog(false)}
         onConfirm={handleDevolucaoConfirm}
-        pedidosDevolvidos={devolvidos.map((p) => ({
+      pedidosDevolvidos={devolvidos.map((p) => ({
           numero_pedido: p.numero_pedido,
           cliente_nome: p.cliente_nome,
+          nf_fr: p.numero_unico || p.numero_pedido,
+          parceiro: p.cliente_nome,
         }))}
+        motorista={ordemCarga?.motorista || ""}
         saving={saving}
       />
     </div>
