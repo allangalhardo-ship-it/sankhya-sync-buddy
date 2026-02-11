@@ -2,7 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ClipboardCheck, LogOut, User } from "lucide-react";
+import { ClipboardCheck, LogOut, User, PackageX } from "lucide-react";
 import FRLogo from "@/components/FRLogo";
 
 const Dashboard = () => {
@@ -45,7 +45,7 @@ const Dashboard = () => {
           <p className="text-muted-foreground mt-1">Selecione o tipo de checklist para iniciar o acerto.</p>
         </div>
 
-        <div className="max-w-md mx-auto">
+        <div className="max-w-md mx-auto space-y-4">
           <Card
             className="cursor-pointer transition-all hover:shadow-lg hover:-translate-y-1 border-2 border-l-4 border-l-primary hover:border-primary/50 group"
             onClick={() => navigate("/acerto/entrega")}
@@ -59,6 +59,23 @@ const Dashboard = () => {
               <CardTitle className="text-xl mb-2">Iniciar Acerto</CardTitle>
               <CardDescription>
                 Escaneie a ordem de carga para iniciar o acerto de romaneio. Devoluções serão tratadas automaticamente.
+              </CardDescription>
+            </CardContent>
+          </Card>
+
+          <Card
+            className="cursor-pointer transition-all hover:shadow-lg hover:-translate-y-1 border-2 border-l-4 border-l-destructive hover:border-destructive/50 group"
+            onClick={() => navigate("/historico-devolucoes")}
+          >
+            <CardHeader className="pb-3">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-destructive/10 group-hover:bg-destructive/20 transition-colors">
+                <PackageX className="h-7 w-7 text-destructive" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <CardTitle className="text-xl mb-2">Histórico de Devoluções</CardTitle>
+              <CardDescription>
+                Visualize todas as devoluções registradas com detalhes completos do checklist.
               </CardDescription>
             </CardContent>
           </Card>

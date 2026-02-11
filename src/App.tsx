@@ -8,6 +8,7 @@ import Index from "./pages/Index";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Acerto from "./pages/Acerto";
+import HistoricoDevolucoes from "./pages/HistoricoDevolucoes";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -52,6 +53,7 @@ const App = () => (
             <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/acerto/:tipo" element={<ProtectedRoute><Acerto /></ProtectedRoute>} />
+            <Route path="/historico-devolucoes" element={<ProtectedRoute><HistoricoDevolucoes /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>
