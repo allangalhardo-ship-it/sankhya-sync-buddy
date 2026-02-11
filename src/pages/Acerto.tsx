@@ -226,29 +226,30 @@ const Acerto = () => {
   };
 
   const handleDevolucaoConfirm = async (devolucoes: DevolucaoInfo[]) => {
-    // Store devolução info in observacao of each devolvido pedido
-    if (ordemCarga) {
-      const updated = { ...ordemCarga };
-      for (const dev of devolucoes) {
-        const idx = updated.pedidos.findIndex((p) => p.numero_pedido === dev.nunota);
-        if (idx >= 0) {
-          const info = [
-            `[DEVOLUÇÃO ${dev.tipo_devolucao.toUpperCase()}]`,
-            dev.motivo ? `Motivo: ${dev.motivo}` : "",
-            dev.nf_fr ? `NF FR: ${dev.nf_fr}` : "",
-            dev.nf_cliente ? `NF Cliente: ${dev.nf_cliente}` : "",
-            dev.parceiro ? `Parceiro: ${dev.parceiro}` : "",
-            dev.vendedor ? `Vendedor: ${dev.vendedor}` : "",
-            dev.agregado ? `Agregado: ${dev.agregado}` : "",
-            `Conferência: ${dev.conferencia_produtos === "sim" ? "Sim" : "Não"}`,
-            `Desconta Taxa: ${dev.desconta_taxa_vendedor === "sim" ? "Sim" : "Não"}`,
-          ]
-            .filter(Boolean)
-            .join(" | ");
-          updated.pedidos[idx].observacao = info;
-        }
-      }
-      setOrdemCarga(updated);
+    if (!acertoId) return;
+
+    // Save devolução data to dedicated table
+    const { error } = await supabase.from("acerto_devolucoes").insert(
+      devolucoes.map((dev) => ({
+        acerto_id: acertoId,
+        numero_pedido: dev.nunota,
+        cliente_nome: dev.cliente_nome,
+        tipo_devolucao: dev.tipo_devolucao,
+        agregado: dev.agregado,
+        nf_fr: dev.nf_fr,
+        nf_cliente: dev.nf_cliente,
+        parceiro: dev.parceiro,
+        vendedor: dev.vendedor,
+        motivo: dev.motivo,
+        conferencia_produtos: dev.conferencia_produtos,
+        desconta_taxa_vendedor: dev.desconta_taxa_vendedor,
+      }))
+    );
+
+    if (error) {
+      console.error("Erro ao salvar devoluções:", error);
+      toast({ title: "Erro", description: "Erro ao salvar dados de devolução.", variant: "destructive" });
+      return;
     }
 
     setPendingDevolucaoFinalize(true);
