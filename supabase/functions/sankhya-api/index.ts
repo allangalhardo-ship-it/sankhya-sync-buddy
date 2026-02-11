@@ -467,8 +467,20 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Action: getMotivosDevol - get motivos de devolução
+    if (action === 'getMotivosDevol') {
+      const sql = `SELECT CODIGO, DESCRICAO FROM AD_MOTDEV ORDER BY DESCRICAO`;
+      const rawData = await executeQuery(sql);
+      const records = parseDbExplorerResponse(rawData);
+
+      return new Response(
+        JSON.stringify({ success: true, data: records }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     return new Response(
-      JSON.stringify({ success: false, error: 'Action inválida. Use "test", "getCabecalho", "getPedidos", "saveAcerto" ou "request".' }),
+      JSON.stringify({ success: false, error: 'Action inválida. Use "test", "getCabecalho", "getPedidos", "saveAcerto", "getMotivosDevol" ou "request".' }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
