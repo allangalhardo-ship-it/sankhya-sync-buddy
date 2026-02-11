@@ -26,6 +26,7 @@ interface Pedido {
   observacao: string;
   foto_canhoto_url?: string;
   fotoFile?: File;
+  is_reentrega?: boolean;
 }
 
 interface OrdemCarga {
@@ -92,8 +93,9 @@ const Acerto = () => {
           numero_unico: String(p.NUMNOTA || ""),
           cliente_nome: p.NOME_DO_CLIENTE || "Cliente",
           endereco: p.ENDERECO || "",
-          status_entrega: (p.REENT === "REENTREGA" ? "reentrega" : "pendente") as StatusEntrega,
+          status_entrega: "pendente" as StatusEntrega,
           observacao: [p.CARTASELO, p.AGENDAMENTO, p.PRIORIDADE].filter(Boolean).join(" | "),
+          is_reentrega: p.REENT === "REENTREGA",
         })),
       };
 
@@ -364,7 +366,15 @@ const Acerto = () => {
                       {/* Pedido Header */}
                       <div className="flex items-start justify-between">
                         <div>
-                          <p className="font-bold text-foreground">Pedido {pedido.numero_pedido}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="font-bold text-foreground">Pedido {pedido.numero_pedido}</p>
+                            {pedido.is_reentrega && (
+                              <Badge variant="outline" className="text-[10px] border-warning text-warning bg-warning/10 px-1.5 py-0">
+                                <RotateCcw className="h-2.5 w-2.5 mr-0.5" />
+                                Já foi reentrega
+                              </Badge>
+                            )}
+                          </div>
                           <p className="text-sm text-muted-foreground">{pedido.cliente_nome}</p>
                           {pedido.endereco && (
                             <p className="text-xs text-muted-foreground mt-1">{pedido.endereco}</p>
