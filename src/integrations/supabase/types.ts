@@ -23,11 +23,20 @@ export type Database = {
           created_at: string
           desconta_taxa_vendedor: string
           id: string
+          logistica_ajuste_estoque: boolean | null
+          logistica_concluido_at: string | null
+          logistica_conferencia_nota_cega: boolean | null
+          logistica_data: string | null
+          logistica_nf_entrada: string | null
+          logistica_nf_substituicao: string | null
+          logistica_numero_nota_cega: string | null
+          logistica_responsavel: string | null
           motivo: string | null
           nf_cliente: string | null
           nf_fr: string | null
           numero_pedido: string
           parceiro: string | null
+          status: string
           tipo_devolucao: string
           vendedor: string | null
         }
@@ -39,11 +48,20 @@ export type Database = {
           created_at?: string
           desconta_taxa_vendedor?: string
           id?: string
+          logistica_ajuste_estoque?: boolean | null
+          logistica_concluido_at?: string | null
+          logistica_conferencia_nota_cega?: boolean | null
+          logistica_data?: string | null
+          logistica_nf_entrada?: string | null
+          logistica_nf_substituicao?: string | null
+          logistica_numero_nota_cega?: string | null
+          logistica_responsavel?: string | null
           motivo?: string | null
           nf_cliente?: string | null
           nf_fr?: string | null
           numero_pedido: string
           parceiro?: string | null
+          status?: string
           tipo_devolucao?: string
           vendedor?: string | null
         }
@@ -55,11 +73,20 @@ export type Database = {
           created_at?: string
           desconta_taxa_vendedor?: string
           id?: string
+          logistica_ajuste_estoque?: boolean | null
+          logistica_concluido_at?: string | null
+          logistica_conferencia_nota_cega?: boolean | null
+          logistica_data?: string | null
+          logistica_nf_entrada?: string | null
+          logistica_nf_substituicao?: string | null
+          logistica_numero_nota_cega?: string | null
+          logistica_responsavel?: string | null
           motivo?: string | null
           nf_cliente?: string | null
           nf_fr?: string | null
           numero_pedido?: string
           parceiro?: string | null
+          status?: string
           tipo_devolucao?: string
           vendedor?: string | null
         }
