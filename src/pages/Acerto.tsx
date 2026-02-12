@@ -12,8 +12,9 @@ import { useToast } from "@/hooks/use-toast";
 import ChecklistDevolucaoDialog, { DevolucaoInfo } from "@/components/ChecklistDevolucaoDialog";
 import {
   ArrowLeft, ScanBarcode, Loader2, Truck, User, MapPin,
-  CheckCircle2, XCircle, RotateCcw, Clock, Camera, Save, Send
+  CheckCircle2, XCircle, RotateCcw, Clock, Camera, Save, Send, Video
 } from "lucide-react";
+import { Html5Qrcode } from "html5-qrcode";
 
 type StatusEntrega = "pendente" | "entregue" | "devolvido" | "reentrega";
 
@@ -56,10 +57,48 @@ const Acerto = () => {
   const [saving, setSaving] = useState(false);
   const [ordemCarga, setOrdemCarga] = useState<OrdemCarga | null>(null);
   const [acertoId, setAcertoId] = useState<string | null>(null);
+  const [scannerActive, setScannerActive] = useState(false);
   const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
+  const scannerRef = useRef<Html5Qrcode | null>(null);
   const [showDevolucaoDialog, setShowDevolucaoDialog] = useState(false);
   const [pendingDevolucaoFinalize, setPendingDevolucaoFinalize] = useState(false);
   const tipoLabel = tipo === "entrega" ? "Entrega" : "Devolução";
+
+  const startScanner = async () => {
+    try {
+      const html5Qrcode = new Html5Qrcode("barcode-reader");
+      scannerRef.current = html5Qrcode;
+      setScannerActive(true);
+      await html5Qrcode.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: { width: 280, height: 120 } },
+        (decodedText) => {
+          setCodigoBarras(decodedText);
+          stopScanner();
+          // Auto-search after scan
+          setTimeout(() => {
+            document.getElementById("btn-scan-search")?.click();
+          }, 300);
+        },
+        () => {} // ignore errors during scanning
+      );
+    } catch (err) {
+      console.error("Erro ao abrir câmera:", err);
+      toast({ title: "Erro", description: "Não foi possível acessar a câmera.", variant: "destructive" });
+      setScannerActive(false);
+    }
+  };
+
+  const stopScanner = async () => {
+    if (scannerRef.current) {
+      try {
+        await scannerRef.current.stop();
+        scannerRef.current.clear();
+      } catch {}
+      scannerRef.current = null;
+    }
+    setScannerActive(false);
+  };
 
   const handleScan = async () => {
     if (!codigoBarras.trim()) return;
@@ -387,6 +426,17 @@ const Acerto = () => {
               <p className="text-sm text-muted-foreground">
                 Escaneie o código de barras do romaneio ou digite o número da ordem de carga.
               </p>
+              
+              {/* Camera scanner area */}
+              <div id="barcode-reader" className={scannerActive ? "w-full rounded-lg overflow-hidden" : "hidden"} />
+              
+              {scannerActive && (
+                <Button variant="outline" onClick={stopScanner} className="w-full">
+                  <XCircle className="h-4 w-4 mr-2" />
+                  Fechar Câmera
+                </Button>
+              )}
+
               <div className="flex gap-2">
                 <Input
                   placeholder="Número da ordem de carga"
@@ -396,7 +446,12 @@ const Acerto = () => {
                   autoFocus
                   className="text-lg font-mono"
                 />
-                <Button onClick={handleScan} disabled={loading || !codigoBarras.trim()}>
+                {!scannerActive && (
+                  <Button variant="outline" onClick={startScanner} title="Abrir câmera">
+                    <Video className="h-4 w-4" />
+                  </Button>
+                )}
+                <Button id="btn-scan-search" onClick={handleScan} disabled={loading || !codigoBarras.trim()}>
                   {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanBarcode className="h-4 w-4" />}
                 </Button>
               </div>
