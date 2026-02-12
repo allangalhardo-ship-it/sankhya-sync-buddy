@@ -215,45 +215,84 @@ const Acerto = () => {
         ];
       }
 
-      setOrdemCarga(ordem);
-
-      // Create acerto record in database
-      const { data: acertoData, error: acertoError } = await supabase
+      // Check for existing acerto for this OC
+      const { data: existingAcerto } = await supabase
         .from("acertos")
-        .insert({
-          user_id: user!.id,
-          tipo: tipo as "entrega" | "devolucao",
-          numero_ordem_carga: ordem.numero,
-          motorista_nome: ordem.motorista,
-          placa: ordem.placa,
-        })
         .select("id")
-        .single();
+        .eq("numero_ordem_carga", ordem.numero)
+        .eq("user_id", user!.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-      if (acertoError) {
-        console.error("Erro ao criar acerto:", acertoError);
-        toast({ title: "Erro", description: "Erro ao salvar acerto no banco.", variant: "destructive" });
+      if (existingAcerto) {
+        // Load existing pedidos with canhotos
+        setAcertoId(existingAcerto.id);
+
+        const { data: existingPedidos } = await supabase
+          .from("acerto_pedidos")
+          .select("*")
+          .eq("acerto_id", existingAcerto.id);
+
+        if (existingPedidos && existingPedidos.length > 0) {
+          // Merge existing data (canhotos, status, obs) into ordem
+          ordem.pedidos = ordem.pedidos.map((p) => {
+            const existing = existingPedidos.find((ep) => ep.numero_pedido === p.numero_pedido);
+            if (existing) {
+              return {
+                ...p,
+                id: existing.id,
+                status_entrega: (existing.status_entrega as StatusEntrega) || p.status_entrega,
+                observacao: existing.observacao || p.observacao,
+                foto_canhoto_url: existing.foto_canhoto_url || undefined,
+              };
+            }
+            return p;
+          });
+        }
+
+        setOrdemCarga(ordem);
       } else {
-        setAcertoId(acertoData.id);
+        setOrdemCarga(ordem);
 
-        // Insert pedidos
-        if (ordem.pedidos.length > 0 && ordem.pedidos[0].numero_pedido !== "Sem pedidos") {
-          const { error: pedidosError } = await supabase
-            .from("acerto_pedidos")
-            .insert(
-              ordem.pedidos.map((p) => ({
-                acerto_id: acertoData.id,
-                numero_pedido: p.numero_pedido,
-                numero_unico: p.numero_unico,
-                cliente_nome: p.cliente_nome,
-                endereco: p.endereco,
-                status_entrega: p.status_entrega,
-                observacao: p.observacao,
-              }))
-            );
+        // Create new acerto record
+        const { data: acertoData, error: acertoError } = await supabase
+          .from("acertos")
+          .insert({
+            user_id: user!.id,
+            tipo: tipo as "entrega" | "devolucao",
+            numero_ordem_carga: ordem.numero,
+            motorista_nome: ordem.motorista,
+            placa: ordem.placa,
+          })
+          .select("id")
+          .single();
 
-          if (pedidosError) {
-            console.error("Erro ao inserir pedidos:", pedidosError);
+        if (acertoError) {
+          console.error("Erro ao criar acerto:", acertoError);
+          toast({ title: "Erro", description: "Erro ao salvar acerto no banco.", variant: "destructive" });
+        } else {
+          setAcertoId(acertoData.id);
+
+          // Insert pedidos
+          if (ordem.pedidos.length > 0 && ordem.pedidos[0].numero_pedido !== "Sem pedidos") {
+            const { error: pedidosError } = await supabase
+              .from("acerto_pedidos")
+              .insert(
+                ordem.pedidos.map((p) => ({
+                  acerto_id: acertoData.id,
+                  numero_pedido: p.numero_pedido,
+                  numero_unico: p.numero_unico,
+                  cliente_nome: p.cliente_nome,
+                  endereco: p.endereco,
+                  status_entrega: p.status_entrega,
+                  observacao: p.observacao,
+                }))
+              );
+
+            if (pedidosError) {
+              console.error("Erro ao inserir pedidos:", pedidosError);
+            }
           }
         }
       }
@@ -633,7 +672,7 @@ const Acerto = () => {
                       />
 
                       {/* Photo */}
-                      <div className="flex items-center gap-2">
+                      <div className="space-y-2">
                         <input
                           type="file"
                           accept="image/*"
@@ -645,19 +684,44 @@ const Acerto = () => {
                             if (file) handlePhotoCapture(index, file);
                           }}
                         />
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => fileInputRefs.current[index]?.click()}
-                          className="text-xs"
-                        >
-                          <Camera className="h-4 w-4 mr-1" />
-                          {pedido.fotoFile ? "Foto anexada ✓" : "Anexar Canhoto"}
-                        </Button>
-                        {pedido.fotoFile && (
-                          <span className="text-xs text-success font-medium">
-                            {pedido.fotoFile.name}
-                          </span>
+                        {/* Show existing canhoto preview */}
+                        {(pedido.foto_canhoto_url || pedido.fotoFile) && (
+                          <div className="flex items-center gap-3 p-2 rounded-lg bg-muted/50 border">
+                            <img
+                              src={pedido.fotoFile
+                                ? URL.createObjectURL(pedido.fotoFile)
+                                : supabase.storage.from("canhotos").getPublicUrl(pedido.foto_canhoto_url!).data.publicUrl
+                              }
+                              alt="Canhoto"
+                              className="h-16 w-16 rounded-md object-cover border"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-medium text-success">Canhoto anexado ✓</p>
+                              <p className="text-xs text-muted-foreground truncate">
+                                {pedido.fotoFile ? pedido.fotoFile.name : "Foto salva"}
+                              </p>
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => fileInputRefs.current[index]?.click()}
+                              className="text-xs shrink-0"
+                            >
+                              <Camera className="h-4 w-4 mr-1" />
+                              Trocar
+                            </Button>
+                          </div>
+                        )}
+                        {!pedido.foto_canhoto_url && !pedido.fotoFile && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => fileInputRefs.current[index]?.click()}
+                            className="text-xs"
+                          >
+                            <Camera className="h-4 w-4 mr-1" />
+                            Anexar Canhoto
+                          </Button>
                         )}
                       </div>
                     </CardContent>
