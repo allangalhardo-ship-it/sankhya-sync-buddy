@@ -1,13 +1,40 @@
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { ClipboardCheck, LogOut, User, Warehouse } from "lucide-react";
 import FRLogo from "@/components/FRLogo";
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
+  const [pendingCount, setPendingCount] = useState(0);
+
+  useEffect(() => {
+    const fetchCount = async () => {
+      const { count } = await supabase
+        .from("acerto_devolucoes")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "pendente_logistica");
+      setPendingCount(count ?? 0);
+    };
+
+    fetchCount();
+
+    const channel = supabase
+      .channel("pending-devolucoes")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "acerto_devolucoes" },
+        () => fetchCount()
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, []);
 
   return (
     <div className="min-h-screen bg-background">
@@ -73,7 +100,14 @@ const Dashboard = () => {
               </div>
             </CardHeader>
             <CardContent>
-              <CardTitle className="text-xl mb-2">Pendências de Logística</CardTitle>
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-xl mb-2">Pendências de Logística</CardTitle>
+                {pendingCount > 0 && (
+                  <Badge variant="destructive" className="mb-2 text-sm px-2.5 py-0.5">
+                    {pendingCount}
+                  </Badge>
+                )}
+              </div>
               <CardDescription>
                 Gerencie devoluções pendentes de recebimento e preencha o checklist logístico.
               </CardDescription>
