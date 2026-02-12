@@ -86,12 +86,11 @@ const Acerto = () => {
       await html5Qrcode.start(
         { facingMode: "environment" },
         {
-          fps: 15,
-          qrbox: { width: 300, height: 150 },
-          aspectRatio: 1.0,
-          disableFlip: false,
-        },
+          fps: 10,
+          experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+        } as any,
         (decodedText) => {
+          console.log("Barcode lido:", decodedText);
           setCodigoBarras(decodedText);
           stopScanner();
           setTimeout(() => {
