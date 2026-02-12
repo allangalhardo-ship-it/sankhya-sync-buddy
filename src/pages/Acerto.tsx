@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { sankhya, CabecalhoData, PedidoData } from "@/lib/sankhya";
@@ -14,7 +14,7 @@ import {
   ArrowLeft, ScanBarcode, Loader2, Truck, User, MapPin,
   CheckCircle2, XCircle, RotateCcw, Clock, Camera, Save, Send, Video
 } from "lucide-react";
-import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
+
 
 type StatusEntrega = "pendente" | "entregue" | "devolvido" | "reentrega";
 
@@ -59,46 +59,76 @@ const Acerto = () => {
   const [acertoId, setAcertoId] = useState<string | null>(null);
   const [scannerActive, setScannerActive] = useState(false);
   const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
-  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const scanningRef = useRef(false);
   const [showDevolucaoDialog, setShowDevolucaoDialog] = useState(false);
   const [pendingDevolucaoFinalize, setPendingDevolucaoFinalize] = useState(false);
   const tipoLabel = tipo === "entrega" ? "Entrega" : "Devolução";
 
+  const stopScanner = useCallback(() => {
+    scanningRef.current = false;
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    setScannerActive(false);
+  }, []);
+
   const startScanner = async () => {
     try {
-      const formatsToSupport = [
-        Html5QrcodeSupportedFormats.CODE_128,
-        Html5QrcodeSupportedFormats.CODE_39,
-        Html5QrcodeSupportedFormats.EAN_13,
-        Html5QrcodeSupportedFormats.EAN_8,
-        Html5QrcodeSupportedFormats.ITF,
-        Html5QrcodeSupportedFormats.CODABAR,
-        Html5QrcodeSupportedFormats.CODE_93,
-        Html5QrcodeSupportedFormats.UPC_A,
-        Html5QrcodeSupportedFormats.UPC_E,
-      ];
-      const html5Qrcode = new Html5Qrcode("barcode-reader", {
-        formatsToSupport,
-        verbose: false,
-      });
-      scannerRef.current = html5Qrcode;
+      // Check for BarcodeDetector support
+      if (!('BarcodeDetector' in window)) {
+        toast({ title: "Não suportado", description: "Seu navegador não suporta leitura de código de barras. Tente usar o Chrome.", variant: "destructive" });
+        return;
+      }
+
       setScannerActive(true);
-      await html5Qrcode.start(
-        { facingMode: "environment" },
-        {
-          fps: 10,
-          experimentalFeatures: { useBarCodeDetectorIfSupported: true },
-        } as any,
-        (decodedText) => {
-          console.log("Barcode lido:", decodedText);
-          setCodigoBarras(decodedText);
-          stopScanner();
-          setTimeout(() => {
-            document.getElementById("btn-scan-search")?.click();
-          }, 300);
-        },
-        () => {}
-      );
+      
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } }
+      });
+      streamRef.current = stream;
+
+      // Wait for video element to be in DOM
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+
+      const barcodeDetector = new (window as any).BarcodeDetector({
+        formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'itf', 'codabar', 'code_93', 'upc_a', 'upc_e']
+      });
+
+      scanningRef.current = true;
+
+      const detectLoop = async () => {
+        if (!scanningRef.current || !videoRef.current) return;
+        
+        try {
+          const barcodes = await barcodeDetector.detect(videoRef.current);
+          if (barcodes.length > 0) {
+            const code = barcodes[0].rawValue;
+            console.log("Barcode lido:", code);
+            setCodigoBarras(code);
+            stopScanner();
+            setTimeout(() => {
+              document.getElementById("btn-scan-search")?.click();
+            }, 300);
+            return;
+          }
+        } catch (err) {
+          console.error("Erro na detecção:", err);
+        }
+
+        if (scanningRef.current) {
+          requestAnimationFrame(detectLoop);
+        }
+      };
+
+      detectLoop();
     } catch (err) {
       console.error("Erro ao abrir câmera:", err);
       toast({ title: "Erro", description: "Não foi possível acessar a câmera.", variant: "destructive" });
@@ -106,16 +136,14 @@ const Acerto = () => {
     }
   };
 
-  const stopScanner = async () => {
-    if (scannerRef.current) {
-      try {
-        await scannerRef.current.stop();
-        scannerRef.current.clear();
-      } catch {}
-      scannerRef.current = null;
-    }
-    setScannerActive(false);
-  };
+  useEffect(() => {
+    return () => {
+      scanningRef.current = false;
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, []);
 
   const handleScan = async () => {
     if (!codigoBarras.trim()) return;
@@ -445,7 +473,18 @@ const Acerto = () => {
               </p>
               
               {/* Camera scanner area */}
-              <div id="barcode-reader" className={scannerActive ? "w-full rounded-lg overflow-hidden" : "hidden"} />
+              {scannerActive && (
+                <div className="w-full rounded-lg overflow-hidden bg-black">
+                  <video
+                    ref={videoRef}
+                    className="w-full"
+                    playsInline
+                    muted
+                    autoPlay
+                    style={{ transform: "scaleX(1)" }}
+                  />
+                </div>
+              )}
               
               {scannerActive && (
                 <Button variant="outline" onClick={stopScanner} className="w-full">
