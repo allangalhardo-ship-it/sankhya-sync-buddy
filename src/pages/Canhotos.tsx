@@ -16,6 +16,7 @@ import {
 interface CanhotoResult {
   id: string;
   numero_pedido: string;
+  numero_unico: string | null;
   cliente_nome: string | null;
   foto_canhoto_url: string | null;
   status_entrega: string;
@@ -45,7 +46,7 @@ const Canhotos = () => {
     try {
       let query = supabase
         .from("acerto_pedidos")
-        .select("id, numero_pedido, cliente_nome, foto_canhoto_url, status_entrega, acerto_id, created_at, acertos(numero_ordem_carga)")
+        .select("id, numero_pedido, numero_unico, cliente_nome, foto_canhoto_url, status_entrega, acerto_id, created_at, acertos(numero_ordem_carga)")
         .not("foto_canhoto_url", "is", null);
 
       if (searchPedido.trim()) {
@@ -71,6 +72,7 @@ const Canhotos = () => {
         .map((item: any) => ({
           id: item.id,
           numero_pedido: item.numero_pedido,
+          numero_unico: item.numero_unico,
           cliente_nome: item.cliente_nome,
           foto_canhoto_url: item.foto_canhoto_url,
           status_entrega: item.status_entrega,
@@ -173,7 +175,7 @@ const Canhotos = () => {
                   )}
                 </button>
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-foreground">Pedido {item.numero_pedido}</p>
+                  <p className="font-semibold text-foreground">Pedido {item.numero_unico || item.numero_pedido}</p>
                   <p className="text-sm text-muted-foreground truncate">{item.cliente_nome || "Cliente não informado"}</p>
                   <p className="text-xs text-muted-foreground">OC: {item.numero_ordem_carga} • {new Date(item.created_at).toLocaleDateString("pt-BR")}</p>
                 </div>
