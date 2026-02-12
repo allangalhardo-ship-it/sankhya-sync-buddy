@@ -582,7 +582,7 @@ const Acerto = () => {
                       <div className="flex items-start justify-between">
                         <div>
                           <div className="flex items-center gap-2">
-                            <p className="font-bold text-foreground">Pedido {pedido.numero_pedido}</p>
+                            <p className="font-bold text-foreground">Pedido {pedido.numero_unico || pedido.numero_pedido}</p>
                             {pedido.is_reentrega && (
                               <Badge variant="outline" className="text-[10px] border-warning text-warning bg-warning/10 px-1.5 py-0">
                                 <RotateCcw className="h-2.5 w-2.5 mr-0.5" />
