@@ -466,7 +466,7 @@ const PendenciasLogistica = () => {
                               <CardTitle className="text-sm font-semibold">
                                 <span className="flex items-center gap-2">
                                   <FileText className="h-4 w-4 text-primary" />
-                                  Pedido {dev.numero_pedido}
+                                  Pedido {dev.nf_fr || dev.numero_pedido}
                                 </span>
                               </CardTitle>
                               <div className="flex items-center gap-2">
