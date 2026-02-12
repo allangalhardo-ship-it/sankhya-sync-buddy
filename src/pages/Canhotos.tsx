@@ -157,16 +157,18 @@ const Canhotos = () => {
         )}
 
         <div className="space-y-3">
-          {results.map((item) => (
+          {results.map((item) => {
+            const publicUrl = item.foto_canhoto_url ? getPublicUrl(item.foto_canhoto_url) : null;
+            return (
             <Card key={item.id} className="overflow-hidden">
               <CardContent className="p-4 flex items-center gap-4">
                 <button
-                  onClick={() => item.foto_canhoto_url && setPreviewUrl(item.foto_canhoto_url)}
+                  onClick={() => publicUrl && setPreviewUrl(publicUrl)}
                   className="flex-shrink-0 h-16 w-16 rounded-lg bg-muted flex items-center justify-center overflow-hidden border hover:ring-2 hover:ring-primary transition-all"
                 >
-                  {item.foto_canhoto_url ? (
+                  {publicUrl ? (
                     <img
-                      src={item.foto_canhoto_url}
+                      src={publicUrl}
                       alt="Canhoto"
                       className="h-full w-full object-cover"
                     />
@@ -182,13 +184,14 @@ const Canhotos = () => {
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => item.foto_canhoto_url && window.open(item.foto_canhoto_url, "_blank")}
+                  onClick={() => publicUrl && window.open(publicUrl, "_blank")}
                 >
                   <ExternalLink className="h-4 w-4" />
                 </Button>
               </CardContent>
             </Card>
-          ))}
+            );
+          })}
         </div>
 
         {searched && results.length === 0 && (
