@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ClipboardCheck, LogOut, User, Warehouse } from "lucide-react";
+import { ClipboardCheck, LogOut, User, Warehouse, FileImage } from "lucide-react";
 import FRLogo from "@/components/FRLogo";
 
 const Dashboard = () => {
@@ -110,6 +110,23 @@ const Dashboard = () => {
               </div>
               <CardDescription>
                 Gerencie devoluções pendentes de recebimento e preencha o checklist logístico.
+              </CardDescription>
+            </CardContent>
+          </Card>
+
+          <Card
+            className="cursor-pointer transition-all hover:shadow-lg hover:-translate-y-1 border-2 border-l-4 border-l-[hsl(200,70%,45%)] hover:border-[hsl(200,70%,45%)]/50 group"
+            onClick={() => navigate("/canhotos")}
+          >
+            <CardHeader className="pb-3">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[hsl(200,70%,45%)]/10 group-hover:bg-[hsl(200,70%,45%)]/20 transition-colors">
+                <FileImage className="h-7 w-7 text-[hsl(200,70%,45%)]" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <CardTitle className="text-xl mb-2">Buscar Canhotos</CardTitle>
+              <CardDescription>
+                Pesquise e visualize os comprovantes de entrega (canhotos) por pedido ou ordem de carga.
               </CardDescription>
             </CardContent>
           </Card>
