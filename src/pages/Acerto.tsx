@@ -14,7 +14,7 @@ import {
   ArrowLeft, ScanBarcode, Loader2, Truck, User, MapPin,
   CheckCircle2, XCircle, RotateCcw, Clock, Camera, Save, Send, Video
 } from "lucide-react";
-import { Html5Qrcode } from "html5-qrcode";
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
 
 type StatusEntrega = "pendente" | "entregue" | "devolvido" | "reentrega";
 
@@ -66,21 +66,39 @@ const Acerto = () => {
 
   const startScanner = async () => {
     try {
-      const html5Qrcode = new Html5Qrcode("barcode-reader");
+      const formatsToSupport = [
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.CODE_39,
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8,
+        Html5QrcodeSupportedFormats.ITF,
+        Html5QrcodeSupportedFormats.CODABAR,
+        Html5QrcodeSupportedFormats.CODE_93,
+        Html5QrcodeSupportedFormats.UPC_A,
+        Html5QrcodeSupportedFormats.UPC_E,
+      ];
+      const html5Qrcode = new Html5Qrcode("barcode-reader", {
+        formatsToSupport,
+        verbose: false,
+      });
       scannerRef.current = html5Qrcode;
       setScannerActive(true);
       await html5Qrcode.start(
         { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 280, height: 120 } },
+        {
+          fps: 15,
+          qrbox: { width: 300, height: 150 },
+          aspectRatio: 1.0,
+          disableFlip: false,
+        },
         (decodedText) => {
           setCodigoBarras(decodedText);
           stopScanner();
-          // Auto-search after scan
           setTimeout(() => {
             document.getElementById("btn-scan-search")?.click();
           }, 300);
         },
-        () => {} // ignore errors during scanning
+        () => {}
       );
     } catch (err) {
       console.error("Erro ao abrir câmera:", err);
