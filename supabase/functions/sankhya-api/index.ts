@@ -546,52 +546,52 @@ Deno.serve(async (req) => {
       // Step 3: Upload image via sessionUpload.mge
       const token = await authenticate();
       const gatewayUrl = Deno.env.get('SANKHYA_GATEWAY_URL')!;
+      const xToken = Deno.env.get('SANKHYA_X_TOKEN')!;
 
-      const sessionKey = `ANEXO_SISTEMA_AD_CANHOTOS_${nunotaInt}`;
-      const uploadUrl = `${gatewayUrl}/gateway/v1/mge/sessionUpload.mge?sessionkey=${encodeURIComponent(sessionKey)}&item=S&salvar=S&useCache=N`;
+      // Try multiple sessionkey formats to find the correct one
+      const sessionKeys = [
+        `ANEXO_SISTEMA_Canhotos_${nunotaInt}`,
+        `ANEXO_SISTEMA_AD_CANHOTOS_${nunotaInt}`,
+      ];
 
-      console.log(`[Sankhya] Upload canhoto: sessionKey=${sessionKey}, size=${imageBytes.length} bytes`);
+      const results: { sessionKey: string; status: number; body: string }[] = [];
 
-      const ext = mimeType.includes('png') ? 'png' : 'jpg';
-      const blob = new Blob([imageBytes], { type: mimeType });
-      const formData = new FormData();
-      formData.append('arquivo', blob, `canhoto_${nunotaInt}.${ext}`);
+      for (const sessionKey of sessionKeys) {
+        const uploadUrl = `${gatewayUrl}/gateway/v1/mge/sessionUpload.mge?sessionkey=${encodeURIComponent(sessionKey)}&item=S&salvar=S&useCache=N`;
 
-      const uploadHeaders: Record<string, string> = {
-        'Authorization': `Bearer ${token}`,
-        'Accept': 'text/html',
-      };
+        console.log(`[Sankhya] Tentando upload: sessionKey=${sessionKey}, size=${imageBytes.length} bytes`);
 
-      let uploadResponse = await fetch(uploadUrl, {
-        method: 'POST',
-        headers: uploadHeaders,
-        body: formData,
-      });
+        const ext = mimeType.includes('png') ? 'png' : 'jpg';
+        const blob = new Blob([imageBytes], { type: mimeType });
+        const formData = new FormData();
+        formData.append('arquivo', blob, `canhoto_${nunotaInt}.${ext}`);
 
-      if (uploadResponse.status === 401) {
-        tokenCache.accessToken = null;
-        const newToken = await authenticate();
-        uploadHeaders['Authorization'] = `Bearer ${newToken}`;
-        uploadResponse = await fetch(uploadUrl, {
+        const uploadHeaders: Record<string, string> = {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'text/html',
+        };
+
+        const uploadResponse = await fetch(uploadUrl, {
           method: 'POST',
           headers: uploadHeaders,
           body: formData,
         });
-      }
 
-      const uploadResultText = await uploadResponse.text();
-      console.log(`[Sankhya] Upload response status: ${uploadResponse.status}`);
-      console.log('[Sankhya] Upload response body:', uploadResultText.substring(0, 1000));
+        const responseText = await uploadResponse.text();
+        console.log(`[Sankhya] sessionKey=${sessionKey} => status=${uploadResponse.status}`);
+        console.log(`[Sankhya] Response (full):`, responseText.substring(0, 2000));
 
-      if (!uploadResponse.ok) {
-        return new Response(
-          JSON.stringify({ success: false, error: `Erro no upload: ${uploadResponse.status}`, response: uploadResultText.substring(0, 500) }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
+        results.push({ sessionKey, status: uploadResponse.status, body: responseText.substring(0, 500) });
+
+        // If we get a response that looks like it contains file info, this is the right key
+        if (uploadResponse.ok && responseText.includes('canhoto')) {
+          console.log(`[Sankhya] Sucesso com sessionKey=${sessionKey}!`);
+          break;
+        }
       }
 
       return new Response(
-        JSON.stringify({ success: true, message: 'Canhoto enviado ao Sankhya', nunota: nunotaInt, uploadResponse: uploadResultText.substring(0, 300) }),
+        JSON.stringify({ success: true, message: 'Upload tentado', nunota: nunotaInt, results }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
