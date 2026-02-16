@@ -618,10 +618,10 @@ Deno.serve(async (req) => {
       multipartBody.set(footerBytes, headerBytes.length + imageBytes.length);
 
       // Step 3a: Upload file to server via sessionUpload.mge
-      // sessionkey is REQUIRED - without it the server returns "chave do arquivo na sessão não encontrada"
-      // Try multiple sessionkey formats for binary content fields
-      const sessionKey = `AD_CANHOTOS_CANHOTO_${nunotaInt}`;
-      const sessionUploadUrl = `${gatewayUrl}/gateway/v1/mge/sessionUpload.mge?sessionkey=${encodeURIComponent(sessionKey)}&item=S&salvar=S&useCache=N`;
+      // sessionkey format for custom fields: {TableName}_{FieldName} (without PK!)
+      // Reference: community post "Dica Salvando Imagens" uses "Produto_IMAGEM"
+      const sessionKey = `AD_CANHOTOS_CANHOTO`;
+      const sessionUploadUrl = `${gatewayUrl}/gateway/v1/mge/sessionUpload.mge?sessionkey=${encodeURIComponent(sessionKey)}&fitem=S&salvar=S&useCache=N`;
       console.log(`[Sankhya] Upload canhoto: ${sessionUploadUrl}, size=${imageBytes.length} bytes, file=${internalName}`);
 
       const doUpload = async (authToken: string) => {
