@@ -27,16 +27,16 @@ interface CanhotoResult {
 
 const Canhotos = () => {
   const navigate = useNavigate();
-  const [searchPedido, setSearchPedido] = useState("");
-  const [searchOC, setSearchOC] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [searchType, setSearchType] = useState<"nunota" | "numnota" | "oc">("nunota");
   const [results, setResults] = useState<CanhotoResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   const handleSearch = async () => {
-    if (!searchPedido.trim() && !searchOC.trim()) {
-      toast({ title: "Informe ao menos um filtro", variant: "destructive" });
+    if (!searchTerm.trim()) {
+      toast({ title: "Informe o valor para busca", variant: "destructive" });
       return;
     }
 
@@ -46,15 +46,18 @@ const Canhotos = () => {
     try {
       let query = supabase
         .from("acerto_pedidos")
-        .select("id, numero_pedido, numero_unico, cliente_nome, foto_canhoto_url, status_entrega, acerto_id, created_at, acertos(numero_ordem_carga)")
-        .not("foto_canhoto_url", "is", null);
+        .select("id, numero_pedido, numero_unico, cliente_nome, foto_canhoto_url, status_entrega, acerto_id, created_at, acertos!inner(numero_ordem_carga, status)")
+        .not("foto_canhoto_url", "is", null)
+        .eq("acertos.status", "finalizado");
 
-      if (searchPedido.trim()) {
-        query = query.ilike("numero_pedido", `%${searchPedido.trim()}%`);
-      }
+      const term = searchTerm.trim();
 
-      if (searchOC.trim()) {
-        query = query.eq("acertos.numero_ordem_carga", searchOC.trim());
+      if (searchType === "nunota") {
+        query = query.eq("numero_unico", term);
+      } else if (searchType === "numnota") {
+        query = query.eq("numero_pedido", term);
+      } else {
+        query = query.eq("acertos.numero_ordem_carga", term);
       }
 
       query = query.order("created_at", { ascending: false }).limit(50);
@@ -63,23 +66,17 @@ const Canhotos = () => {
 
       if (error) throw error;
 
-      const mapped: CanhotoResult[] = (data ?? [])
-        .filter((item: any) => {
-          // If filtering by OC, only keep items where acertos matched
-          if (searchOC.trim()) return item.acertos !== null;
-          return true;
-        })
-        .map((item: any) => ({
-          id: item.id,
-          numero_pedido: item.numero_pedido,
-          numero_unico: item.numero_unico,
-          cliente_nome: item.cliente_nome,
-          foto_canhoto_url: item.foto_canhoto_url,
-          status_entrega: item.status_entrega,
-          acerto_id: item.acerto_id,
-          numero_ordem_carga: item.acertos?.numero_ordem_carga ?? "-",
-          created_at: item.created_at,
-        }));
+      const mapped: CanhotoResult[] = (data ?? []).map((item: any) => ({
+        id: item.id,
+        numero_pedido: item.numero_pedido,
+        numero_unico: item.numero_unico,
+        cliente_nome: item.cliente_nome,
+        foto_canhoto_url: item.foto_canhoto_url,
+        status_entrega: item.status_entrega,
+        acerto_id: item.acerto_id,
+        numero_ordem_carga: item.acertos?.numero_ordem_carga ?? "-",
+        created_at: item.created_at,
+      }));
 
       setResults(mapped);
     } catch (err) {
@@ -114,8 +111,8 @@ const Canhotos = () => {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-lg font-bold text-white">Buscar Canhotos</h1>
-            <p className="text-xs text-[hsl(215,15%,65%)]">Comprovantes de entrega</p>
+            <h1 className="text-lg font-bold text-white">Canhotos - Financeiro</h1>
+            <p className="text-xs text-[hsl(215,15%,65%)]">Comprovantes de acertos concluídos</p>
           </div>
         </div>
       </header>
@@ -123,26 +120,35 @@ const Canhotos = () => {
       <main className="container mx-auto px-4 py-6 max-w-2xl">
         <Card className="mb-6">
           <CardContent className="pt-6 space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="text-sm font-medium text-foreground mb-1 block">Nº do Pedido</label>
-                <Input
-                  placeholder="Ex: 12345"
-                  value={searchPedido}
-                  onChange={(e) => setSearchPedido(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-foreground mb-1 block">Ordem de Carga</label>
-                <Input
-                  placeholder="Ex: 67890"
-                  value={searchOC}
-                  onChange={(e) => setSearchOC(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                />
-              </div>
+            <div className="flex gap-1 p-1 bg-muted rounded-lg">
+              {([
+                { value: "nunota" as const, label: "NUNOTA" },
+                { value: "numnota" as const, label: "NUMNOTA" },
+                { value: "oc" as const, label: "Ordem Carga" },
+              ]).map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setSearchType(opt.value)}
+                  className={`flex-1 text-sm font-medium py-2 rounded-md transition-colors ${
+                    searchType === opt.value
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
             </div>
+            <Input
+              placeholder={
+                searchType === "nunota" ? "Nº Único (NUNOTA)" :
+                searchType === "numnota" ? "Nº da Nota (NUMNOTA)" :
+                "Nº Ordem de Carga"
+              }
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+            />
             <Button onClick={handleSearch} disabled={loading} className="w-full">
               <Search className="h-4 w-4 mr-2" />
               {loading ? "Buscando..." : "Buscar"}
