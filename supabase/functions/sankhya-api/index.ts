@@ -163,6 +163,59 @@ async function saveCrudRecord(entityName: string, fields: Record<string, any>): 
   return data;
 }
 
+async function updateCrudRecord(entityName: string, pkFields: Record<string, any>, updateFields: Record<string, any>): Promise<unknown> {
+  const token = await authenticate();
+  const gatewayUrl = Deno.env.get('SANKHYA_GATEWAY_URL')!;
+  const url = `${gatewayUrl}/gateway/v1/mge/service.sbr?serviceName=CRUDServiceProvider.saveRecord&outputType=json`;
+
+  const localFields: Record<string, any> = {};
+  const allFields = { ...pkFields, ...updateFields };
+  const fieldList: string[] = [];
+  for (const [k, v] of Object.entries(allFields)) {
+    localFields[k] = { "$": String(v) };
+    fieldList.push(k);
+  }
+  const key: Record<string, any> = {};
+  for (const [k, v] of Object.entries(pkFields)) {
+    key[k] = { "$": String(v) };
+  }
+
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json',
+  };
+  const requestBody = JSON.stringify({
+    serviceName: 'CRUDServiceProvider.saveRecord',
+    requestBody: {
+      dataSet: {
+        rootEntity: entityName,
+        includePresentationFields: 'S',
+        dataRow: { localFields, key },
+        entity: { fieldset: { list: fieldList.join(',') } },
+      },
+    },
+  });
+
+  console.log('[Sankhya] UPDATE payload:', requestBody.substring(0, 1000));
+  let response = await fetch(url, { method: 'POST', headers, body: requestBody });
+  if (response.status === 401) {
+    tokenCache.accessToken = null;
+    const newToken = await authenticate();
+    headers['Authorization'] = `Bearer ${newToken}`;
+    response = await fetch(url, { method: 'POST', headers, body: requestBody });
+  }
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Erro ao atualizar Sankhya: ${response.status} - ${errorText}`);
+  }
+  const data = await response.json();
+  console.log('[Sankhya] UPDATE response:', JSON.stringify(data).substring(0, 1000));
+  if (data.status === '0' || data.status === 0) {
+    throw new Error(`Erro Sankhya: ${data.statusMessage || JSON.stringify(data.tsError) || 'Erro desconhecido'}`);
+  }
+  return data;
+}
+
 function buildCabecalhoQuery(ordemCarga: string): string {
   return `
 SELECT
@@ -543,20 +596,21 @@ Deno.serve(async (req) => {
         );
       }
 
-      // Step 3: Upload file via sessionUpload.mge then link via AnexoSistemaSP.salvar
+      // Step 3: Upload file via sessionUpload.mge + save metadata in CANHOTO field
       const token = await authenticate();
       const gatewayUrl = Deno.env.get('SANKHYA_GATEWAY_URL')!;
 
       const ext = mimeType.includes('png') ? 'png' : 'jpg';
+      const timestamp = Date.now();
+      const internalName = `canhoto_${nunotaInt}_${timestamp}.${ext}`;
       const fileName = `canhoto_${nunotaInt}.${ext}`;
       const blob = new Blob([imageBytes], { type: mimeType });
       const formData = new FormData();
-      formData.append('arquivo', blob, fileName);
+      formData.append('arquivo', blob, internalName);
 
-      // Step 3a: Upload file to session via sessionUpload.mge
-      const sessionKey = `ANEXO_SISTEMA_AD_CANHOTOS_${nunotaInt}`;
-      const sessionUploadUrl = `${gatewayUrl}/gateway/v1/mge/sessionUpload.mge?sessionkey=${encodeURIComponent(sessionKey)}&fitem=S&salvar=S&useCache=N`;
-      console.log(`[Sankhya] Upload canhoto: ${sessionUploadUrl}, size=${imageBytes.length} bytes`);
+      // Step 3a: Upload file to server via sessionUpload.mge
+      const sessionUploadUrl = `${gatewayUrl}/gateway/v1/mge/sessionUpload.mge?fitem=S&salvar=S&useCache=N`;
+      console.log(`[Sankhya] Upload canhoto: ${sessionUploadUrl}, size=${imageBytes.length} bytes, file=${internalName}`);
 
       let uploadResponse = await fetch(sessionUploadUrl, {
         method: 'POST',
@@ -585,67 +639,63 @@ Deno.serve(async (req) => {
       console.log(`[Sankhya] sessionUpload status: ${uploadResponse.status}`);
       console.log('[Sankhya] sessionUpload body:', uploadText.substring(0, 500));
 
-      // Step 3b: Link the uploaded file via AnexoSistemaSP.salvar
-      const salvarUrl = `${gatewayUrl}/gateway/v1/mge/service.sbr?serviceName=AnexoSistemaSP.salvar&outputType=json`;
-      const salvarBody = {
-        serviceName: 'AnexoSistemaSP.salvar',
-        requestBody: {
-          params: {
-            pkEntity: String(nunotaInt),
-            keySession: sessionKey,
-            nameEntity: 'AD_CANHOTOS',
-            description: fileName,
-            keyAttach: '',
-            typeAcess: 'ALL',
-            typeApres: 'GLO',
-            nuAttach: '',
-            nameAttach: fileName,
-            fileSelect: 1,
-            oldFile: '',
-          },
-        },
-      };
+      // Step 3b: Build metadata JSON and save to CANHOTO field via CRUDServiceProvider.saveRecord
+      const now = new Date();
+      const lastModifiedDate = `${now.toLocaleString('en-US', { month: 'short' })} ${now.getDate()}, ${now.getFullYear()} ${now.toLocaleString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}`;
+      
+      const fileMetadata = [{
+        name: fileName,
+        size: imageBytes.length,
+        type: mimeType,
+        internalName: internalName,
+        path: 'Repo://Sistema/Arquivos//AD_CANHOTOS',
+        lastModifiedDate: lastModifiedDate,
+      }];
 
-      console.log('[Sankhya] AnexoSistemaSP.salvar payload:', JSON.stringify(salvarBody));
+      const canhotFieldValue = `__start_fileinformation__${JSON.stringify(fileMetadata)}__end_fileinformation__`;
+      console.log(`[Sankhya] CANHOTO field value: ${canhotFieldValue}`);
 
-      const tokenSalvar = await authenticate();
-      const salvarHeaders: Record<string, string> = {
-        'Authorization': `Bearer ${tokenSalvar}`,
-        'Content-Type': 'application/json',
-      };
+      // Save metadata to CANHOTO field - try insert first, then update if exists
+      try {
+        try {
+          await saveCrudRecord('AD_CANHOTOS', {
+            NUNOTA: nunotaInt,
+            NUMNOTA: numnotaInt,
+            CANHOTO: canhotFieldValue,
+          });
+        } catch (insertErr) {
+          const msg = insertErr instanceof Error ? insertErr.message : '';
+          if (msg.includes('PRIMARY KEY') || msg.includes('duplicada') || msg.includes('duplicate')) {
+            console.log('[Sankhya] Registro já existe, atualizando campo CANHOTO...');
+            await updateCrudRecord('AD_CANHOTOS', { NUNOTA: nunotaInt }, { CANHOTO: canhotFieldValue });
+          } else {
+            throw insertErr;
+          }
+        }
 
-      let salvarResponse = await fetch(salvarUrl, {
-        method: 'POST',
-        headers: salvarHeaders,
-        body: JSON.stringify(salvarBody),
-      });
-
-      if (salvarResponse.status === 401) {
-        tokenCache.accessToken = null;
-        const newToken = await authenticate();
-        salvarHeaders['Authorization'] = `Bearer ${newToken}`;
-        salvarResponse = await fetch(salvarUrl, {
-          method: 'POST',
-          headers: salvarHeaders,
-          body: JSON.stringify(salvarBody),
-        });
+        return new Response(
+          JSON.stringify({ 
+            success: true, 
+            message: 'Upload canhoto com metadados gravados no campo', 
+            nunota: nunotaInt, 
+            uploadStatus: uploadResponse.status,
+            fieldValue: canhotFieldValue,
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      } catch (saveError) {
+        const errMsg = saveError instanceof Error ? saveError.message : 'Erro desconhecido';
+        console.error('[Sankhya] Erro ao salvar metadados no campo CANHOTO:', errMsg);
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            error: `Upload OK mas erro ao gravar metadados: ${errMsg}`,
+            nunota: nunotaInt, 
+            uploadStatus: uploadResponse.status,
+          }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
-
-      const salvarText = await salvarResponse.text();
-      console.log(`[Sankhya] AnexoSistemaSP.salvar status: ${salvarResponse.status}`);
-      console.log('[Sankhya] AnexoSistemaSP.salvar body:', salvarText.substring(0, 1000));
-
-      return new Response(
-        JSON.stringify({ 
-          success: salvarResponse.ok, 
-          message: 'Upload canhoto com vinculação', 
-          nunota: nunotaInt, 
-          uploadStatus: uploadResponse.status,
-          salvarStatus: salvarResponse.status,
-          salvarResponse: salvarText.substring(0, 500),
-        }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
     }
 
     return new Response(
