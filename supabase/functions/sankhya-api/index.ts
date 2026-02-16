@@ -481,10 +481,10 @@ Deno.serve(async (req) => {
 
     // Action: uploadCanhoto - save record to AD_CANHOTOS and upload image via sessionUpload.mge
     if (action === 'uploadCanhoto') {
-      const { nunota, numnota, imageBase64, imageMimeType } = body;
-      if (!nunota || !numnota || !imageBase64) {
+      const { nunota, numnota, storagePath, imageBase64, imageMimeType } = body;
+      if (!nunota || !numnota) {
         return new Response(
-          JSON.stringify({ success: false, error: 'nunota, numnota e imageBase64 são obrigatórios' }),
+          JSON.stringify({ success: false, error: 'nunota e numnota são obrigatórios' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
@@ -500,29 +500,62 @@ Deno.serve(async (req) => {
           NUMNOTA: numnotaInt,
         });
       } catch (e) {
-        // Record might already exist, continue to upload
         console.warn('[Sankhya] Aviso ao criar registro AD_CANHOTOS (pode já existir):', e instanceof Error ? e.message : e);
       }
 
-      // Step 2: Upload image via sessionUpload.mge
+      // Step 2: Get image bytes - from storage or base64
+      let imageBytes: Uint8Array;
+      let mimeType = imageMimeType || 'image/jpeg';
+
+      if (storagePath) {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const downloadUrl = `${supabaseUrl}/storage/v1/object/canhotos/${storagePath}`;
+        console.log(`[Sankhya] Baixando imagem do bucket: ${storagePath}`);
+
+        const dlResponse = await fetch(downloadUrl, {
+          headers: { 'Authorization': `Bearer ${serviceKey}` },
+        });
+
+        if (!dlResponse.ok) {
+          const errText = await dlResponse.text();
+          console.error('[Sankhya] Erro ao baixar do bucket:', dlResponse.status, errText);
+          return new Response(
+            JSON.stringify({ success: false, error: `Erro ao baixar imagem do bucket: ${dlResponse.status}` }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const contentType = dlResponse.headers.get('content-type');
+        if (contentType) mimeType = contentType;
+        imageBytes = new Uint8Array(await dlResponse.arrayBuffer());
+        console.log(`[Sankhya] Imagem baixada: ${imageBytes.length} bytes, tipo: ${mimeType}`);
+      } else if (imageBase64) {
+        const binaryStr = atob(imageBase64);
+        imageBytes = new Uint8Array(binaryStr.length);
+        for (let i = 0; i < binaryStr.length; i++) {
+          imageBytes[i] = binaryStr.charCodeAt(i);
+        }
+      } else {
+        return new Response(
+          JSON.stringify({ success: false, error: 'storagePath ou imageBase64 é obrigatório' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Step 3: Upload image via sessionUpload.mge
       const token = await authenticate();
       const gatewayUrl = Deno.env.get('SANKHYA_GATEWAY_URL')!;
 
       const sessionKey = `ANEXO_SISTEMA_AD_CANHOTOS_${nunotaInt}`;
       const uploadUrl = `${gatewayUrl}/gateway/v1/mge/sessionUpload.mge?sessionkey=${encodeURIComponent(sessionKey)}&item=S&salvar=S&useCache=N`;
 
-      console.log(`[Sankhya] Upload canhoto: sessionKey=${sessionKey}`);
+      console.log(`[Sankhya] Upload canhoto: sessionKey=${sessionKey}, size=${imageBytes.length} bytes`);
 
-      // Decode base64 to binary
-      const binaryStr = atob(imageBase64);
-      const bytes = new Uint8Array(binaryStr.length);
-      for (let i = 0; i < binaryStr.length; i++) {
-        bytes[i] = binaryStr.charCodeAt(i);
-      }
-
-      const blob = new Blob([bytes], { type: imageMimeType || 'image/jpeg' });
+      const ext = mimeType.includes('png') ? 'png' : 'jpg';
+      const blob = new Blob([imageBytes], { type: mimeType });
       const formData = new FormData();
-      formData.append('arquivo', blob, `canhoto_${nunotaInt}.jpg`);
+      formData.append('arquivo', blob, `canhoto_${nunotaInt}.${ext}`);
 
       const uploadHeaders: Record<string, string> = {
         'Authorization': `Bearer ${token}`,
@@ -535,9 +568,7 @@ Deno.serve(async (req) => {
         body: formData,
       });
 
-      // Retry on 401
       if (uploadResponse.status === 401) {
-        console.log('[Sankhya] Token expirado no upload, re-autenticando...');
         tokenCache.accessToken = null;
         const newToken = await authenticate();
         uploadHeaders['Authorization'] = `Bearer ${newToken}`;
@@ -548,20 +579,19 @@ Deno.serve(async (req) => {
         });
       }
 
+      const uploadResultText = await uploadResponse.text();
+      console.log(`[Sankhya] Upload response status: ${uploadResponse.status}`);
+      console.log('[Sankhya] Upload response body:', uploadResultText.substring(0, 1000));
+
       if (!uploadResponse.ok) {
-        const errorText = await uploadResponse.text();
-        console.error('[Sankhya] Erro no upload:', uploadResponse.status, errorText);
         return new Response(
-          JSON.stringify({ success: false, error: `Erro no upload: ${uploadResponse.status} - ${errorText}` }),
+          JSON.stringify({ success: false, error: `Erro no upload: ${uploadResponse.status}`, response: uploadResultText.substring(0, 500) }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      const uploadResult = await uploadResponse.text();
-      console.log('[Sankhya] Upload canhoto concluído:', uploadResult.substring(0, 500));
-
       return new Response(
-        JSON.stringify({ success: true, message: 'Canhoto enviado ao Sankhya com sucesso', nunota: nunotaInt }),
+        JSON.stringify({ success: true, message: 'Canhoto enviado ao Sankhya', nunota: nunotaInt, uploadResponse: uploadResultText.substring(0, 300) }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
