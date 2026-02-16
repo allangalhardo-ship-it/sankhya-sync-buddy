@@ -122,7 +122,7 @@ async function saveCrudRecord(entityName: string, fields: Record<string, any>): 
     requestBody: {
       dataSet: {
         rootEntity: entityName,
-        includePresentationFields: 'N',
+        includePresentationFields: 'S',
         dataRow: {
           localFields,
         },
@@ -604,40 +604,49 @@ Deno.serve(async (req) => {
       const timestamp = Date.now();
       const internalName = `canhoto_${nunotaInt}_${timestamp}.${ext}`;
       const fileName = `canhoto_${nunotaInt}.${ext}`;
-      const blob = new Blob([imageBytes], { type: mimeType });
-      const formData = new FormData();
-      formData.append('arquivo', blob, internalName);
+
+      // Build multipart body manually to ensure correct format
+      const boundary = `----FormBoundary${Date.now()}${Math.random().toString(36).substring(2)}`;
+      const headerPart = `--${boundary}\r\nContent-Disposition: form-data; name="arquivo"; filename="${internalName}"\r\nContent-Type: ${mimeType}\r\n\r\n`;
+      const footerPart = `\r\n--${boundary}--\r\n`;
+
+      const headerBytes = new TextEncoder().encode(headerPart);
+      const footerBytes = new TextEncoder().encode(footerPart);
+      const multipartBody = new Uint8Array(headerBytes.length + imageBytes.length + footerBytes.length);
+      multipartBody.set(headerBytes, 0);
+      multipartBody.set(imageBytes, headerBytes.length);
+      multipartBody.set(footerBytes, headerBytes.length + imageBytes.length);
 
       // Step 3a: Upload file to server via sessionUpload.mge
-      const sessionUploadUrl = `${gatewayUrl}/gateway/v1/mge/sessionUpload.mge?fitem=S&salvar=S&useCache=N`;
+      // sessionkey is REQUIRED - without it the server returns "chave do arquivo na sessão não encontrada"
+      // Try multiple sessionkey formats for binary content fields
+      const sessionKey = `AD_CANHOTOS_CANHOTO_${nunotaInt}`;
+      const sessionUploadUrl = `${gatewayUrl}/gateway/v1/mge/sessionUpload.mge?sessionkey=${encodeURIComponent(sessionKey)}&item=S&salvar=S&useCache=N`;
       console.log(`[Sankhya] Upload canhoto: ${sessionUploadUrl}, size=${imageBytes.length} bytes, file=${internalName}`);
 
-      let uploadResponse = await fetch(sessionUploadUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Accept': 'text/html',
-        },
-        body: formData,
-      });
+      const doUpload = async (authToken: string) => {
+        return await fetch(sessionUploadUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': `multipart/form-data; boundary=${boundary}`,
+          },
+          body: multipartBody,
+        });
+      };
+
+      let uploadResponse = await doUpload(token);
 
       if (uploadResponse.status === 401) {
         console.log('[Sankhya] Token expirado, re-autenticando...');
         tokenCache.accessToken = null;
         const newToken = await authenticate();
-        uploadResponse = await fetch(sessionUploadUrl, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${newToken}`,
-            'Accept': 'text/html',
-          },
-          body: formData,
-        });
+        uploadResponse = await doUpload(newToken);
       }
 
       const uploadText = await uploadResponse.text();
       console.log(`[Sankhya] sessionUpload status: ${uploadResponse.status}`);
-      console.log('[Sankhya] sessionUpload body:', uploadText.substring(0, 500));
+      console.log('[Sankhya] sessionUpload body (full):', uploadText);
 
       // Step 3b: Build metadata JSON and save to CANHOTO field via CRUDServiceProvider.saveRecord
       const now = new Date();
