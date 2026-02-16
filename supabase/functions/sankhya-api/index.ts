@@ -543,105 +543,50 @@ Deno.serve(async (req) => {
         );
       }
 
-      // Step 3: Login to on-premise Sankhya to get JSESSIONID
-      const onpremUrl = Deno.env.get('SANKHYA_ONPREM_URL');
-      const sankhyaUser = Deno.env.get('SANKHYA_USERNAME');
-      const sankhyaPass = Deno.env.get('SANKHYA_PASSWORD');
+      // Step 3: Upload via gateway sessionUpload.mge with Bearer token
+      const token = await authenticate();
+      const gatewayUrl = Deno.env.get('SANKHYA_GATEWAY_URL')!;
 
-      if (!onpremUrl || !sankhyaUser || !sankhyaPass) {
-        return new Response(
-          JSON.stringify({ success: false, error: 'Credenciais on-premise não configuradas (SANKHYA_ONPREM_URL, SANKHYA_USERNAME, SANKHYA_PASSWORD)' }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
+      const sessionKey = `ANEXO_SISTEMA_AD_CANHOTOS_${nunotaInt}`;
+      const uploadUrl = `${gatewayUrl}/gateway/v1/mge/sessionUpload.mge?sessionkey=${encodeURIComponent(sessionKey)}&fitem=S&salvar=S&useCache=N`;
 
-      // Login via MobileLoginSP.login to get JSESSIONID
-      const loginUrl = `${onpremUrl}/mge/service.sbr?serviceName=MobileLoginSP.login&outputType=json`;
-      console.log(`[Sankhya] Login on-premise: ${loginUrl}`);
-
-      const loginResponse = await fetch(loginUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          serviceName: 'MobileLoginSP.login',
-          requestBody: {
-            NOMUSU: { $: sankhyaUser },
-            INTERNO: { $: sankhyaPass },
-            KEEPCONNECTED: { $: 'S' },
-          },
-        }),
-      });
-
-      // Extract JSESSIONID from Set-Cookie header
-      const setCookieHeaders = loginResponse.headers.get('set-cookie') || '';
-      const jsessionMatch = setCookieHeaders.match(/JSESSIONID=([^;]+)/);
-      
-      // Also try to get mgeSession from response body
-      const loginData = await loginResponse.json();
-      console.log(`[Sankhya] Login response status: ${loginResponse.status}`);
-      console.log(`[Sankhya] Login response:`, JSON.stringify(loginData).substring(0, 500));
-      console.log(`[Sankhya] Set-Cookie:`, setCookieHeaders.substring(0, 300));
-
-      let jsessionId = jsessionMatch ? jsessionMatch[1] : null;
-      
-      // Try to get jsessionid from response body if not in cookie
-      if (!jsessionId && loginData?.responseBody?.jsessionid) {
-        jsessionId = loginData.responseBody.jsessionid.$;
-      }
-      if (!jsessionId && loginData?.responseBody?.jsessionid) {
-        jsessionId = typeof loginData.responseBody.jsessionid === 'string' 
-          ? loginData.responseBody.jsessionid 
-          : loginData.responseBody.jsessionid?.$;
-      }
-
-      if (!jsessionId) {
-        return new Response(
-          JSON.stringify({ success: false, error: 'Não foi possível obter JSESSIONID do login', loginResponse: loginData }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      console.log(`[Sankhya] JSESSIONID obtido: ${jsessionId.substring(0, 20)}...`);
-
-      // Step 4: Upload via sessionUpload.mge with JSESSIONID cookie
-      const sessionKey = 'CANHOTO_00N';
-      const uploadUrl = `${onpremUrl}/mge/sessionUpload.mge?sessionkey=${encodeURIComponent(sessionKey)}&fitem=S&salvar=S&useCache=N`;
-
-      console.log(`[Sankhya] Upload canhoto: ${uploadUrl}, size=${imageBytes.length} bytes`);
+      console.log(`[Sankhya] Upload canhoto via gateway: ${uploadUrl}, size=${imageBytes.length} bytes`);
 
       const ext = mimeType.includes('png') ? 'png' : 'jpg';
       const blob = new Blob([imageBytes], { type: mimeType });
       const formData = new FormData();
       formData.append('arquivo', blob, `canhoto_${nunotaInt}.${ext}`);
 
-      const uploadResponse = await fetch(uploadUrl, {
+      let uploadResponse = await fetch(uploadUrl, {
         method: 'POST',
         headers: {
-          'Cookie': `JSESSIONID=${jsessionId}`,
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'text/html',
         },
         body: formData,
       });
+
+      // If 401, re-authenticate and retry
+      if (uploadResponse.status === 401) {
+        console.log('[Sankhya] Token expirado no upload, re-autenticando...');
+        tokenCache.accessToken = null;
+        const newToken = await authenticate();
+        uploadResponse = await fetch(uploadUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${newToken}`,
+            'Accept': 'text/html',
+          },
+          body: formData,
+        });
+      }
 
       const uploadResultText = await uploadResponse.text();
       console.log(`[Sankhya] Upload response status: ${uploadResponse.status}`);
       console.log('[Sankhya] Upload response body:', uploadResultText.substring(0, 1000));
 
-      // Step 5: Logout the session
-      try {
-        await fetch(`${onpremUrl}/mge/service.sbr?serviceName=MobileLoginSP.logout&outputType=json`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Cookie': `JSESSIONID=${jsessionId}`,
-          },
-          body: JSON.stringify({ serviceName: 'MobileLoginSP.logout', requestBody: {} }),
-        });
-      } catch (e) {
-        console.warn('[Sankhya] Erro ao fazer logout:', e);
-      }
-
       return new Response(
-        JSON.stringify({ success: uploadResponse.ok, message: 'Upload canhoto via on-premise', nunota: nunotaInt, status: uploadResponse.status, response: uploadResultText.substring(0, 500) }),
+        JSON.stringify({ success: uploadResponse.ok, message: 'Upload canhoto via gateway', nunota: nunotaInt, status: uploadResponse.status, response: uploadResultText.substring(0, 500) }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
