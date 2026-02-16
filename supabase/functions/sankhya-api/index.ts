@@ -479,6 +479,93 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Action: uploadCanhoto - save record to AD_CANHOTOS and upload image via sessionUpload.mge
+    if (action === 'uploadCanhoto') {
+      const { nunota, numnota, imageBase64, imageMimeType } = body;
+      if (!nunota || !numnota || !imageBase64) {
+        return new Response(
+          JSON.stringify({ success: false, error: 'nunota, numnota e imageBase64 são obrigatórios' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const nunotaInt = parseInt(String(nunota), 10);
+      const numnotaInt = parseInt(String(numnota), 10);
+
+      // Step 1: Create record in AD_CANHOTOS via CRUDServiceProvider.saveRecord
+      console.log(`[Sankhya] Criando registro AD_CANHOTOS: NUNOTA=${nunotaInt}, NUMNOTA=${numnotaInt}`);
+      try {
+        await saveCrudRecord('AD_CANHOTOS', {
+          NUNOTA: nunotaInt,
+          NUMNOTA: numnotaInt,
+        });
+      } catch (e) {
+        // Record might already exist, continue to upload
+        console.warn('[Sankhya] Aviso ao criar registro AD_CANHOTOS (pode já existir):', e instanceof Error ? e.message : e);
+      }
+
+      // Step 2: Upload image via sessionUpload.mge
+      const token = await authenticate();
+      const gatewayUrl = Deno.env.get('SANKHYA_GATEWAY_URL')!;
+
+      const sessionKey = `ANEXO_SISTEMA_AD_CANHOTOS_${nunotaInt}`;
+      const uploadUrl = `${gatewayUrl}/gateway/v1/mge/sessionUpload.mge?sessionkey=${encodeURIComponent(sessionKey)}&item=S&salvar=S&useCache=N`;
+
+      console.log(`[Sankhya] Upload canhoto: sessionKey=${sessionKey}`);
+
+      // Decode base64 to binary
+      const binaryStr = atob(imageBase64);
+      const bytes = new Uint8Array(binaryStr.length);
+      for (let i = 0; i < binaryStr.length; i++) {
+        bytes[i] = binaryStr.charCodeAt(i);
+      }
+
+      const blob = new Blob([bytes], { type: imageMimeType || 'image/jpeg' });
+      const formData = new FormData();
+      formData.append('arquivo', blob, `canhoto_${nunotaInt}.jpg`);
+
+      const uploadHeaders: Record<string, string> = {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'text/html',
+      };
+
+      let uploadResponse = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: uploadHeaders,
+        body: formData,
+      });
+
+      // Retry on 401
+      if (uploadResponse.status === 401) {
+        console.log('[Sankhya] Token expirado no upload, re-autenticando...');
+        tokenCache.accessToken = null;
+        const newToken = await authenticate();
+        uploadHeaders['Authorization'] = `Bearer ${newToken}`;
+        uploadResponse = await fetch(uploadUrl, {
+          method: 'POST',
+          headers: uploadHeaders,
+          body: formData,
+        });
+      }
+
+      if (!uploadResponse.ok) {
+        const errorText = await uploadResponse.text();
+        console.error('[Sankhya] Erro no upload:', uploadResponse.status, errorText);
+        return new Response(
+          JSON.stringify({ success: false, error: `Erro no upload: ${uploadResponse.status} - ${errorText}` }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const uploadResult = await uploadResponse.text();
+      console.log('[Sankhya] Upload canhoto concluído:', uploadResult.substring(0, 500));
+
+      return new Response(
+        JSON.stringify({ success: true, message: 'Canhoto enviado ao Sankhya com sucesso', nunota: nunotaInt }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     return new Response(
       JSON.stringify({ success: false, error: 'Action inválida. Use "test", "getCabecalho", "getPedidos", "saveAcerto", "getMotivosDevol" ou "request".' }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
