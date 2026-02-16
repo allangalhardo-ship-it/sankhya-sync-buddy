@@ -543,21 +543,22 @@ Deno.serve(async (req) => {
         );
       }
 
-      // Step 3: Upload via gateway sessionUpload.mge with Bearer token
+      // Step 3: Upload file via sessionUpload.mge then link via AnexoSistemaSP.salvar
       const token = await authenticate();
       const gatewayUrl = Deno.env.get('SANKHYA_GATEWAY_URL')!;
 
-      const sessionKey = `ANEXO_SISTEMA_AD_CANHOTOS_${nunotaInt}`;
-      const uploadUrl = `${gatewayUrl}/gateway/v1/mge/sessionUpload.mge?sessionkey=${encodeURIComponent(sessionKey)}&fitem=S&salvar=S&useCache=N`;
-
-      console.log(`[Sankhya] Upload canhoto via gateway: ${uploadUrl}, size=${imageBytes.length} bytes`);
-
       const ext = mimeType.includes('png') ? 'png' : 'jpg';
+      const fileName = `canhoto_${nunotaInt}.${ext}`;
       const blob = new Blob([imageBytes], { type: mimeType });
       const formData = new FormData();
-      formData.append('arquivo', blob, `canhoto_${nunotaInt}.${ext}`);
+      formData.append('arquivo', blob, fileName);
 
-      let uploadResponse = await fetch(uploadUrl, {
+      // Step 3a: Upload file to session via sessionUpload.mge
+      const sessionKey = `ANEXO_SISTEMA_AD_CANHOTOS_${nunotaInt}`;
+      const sessionUploadUrl = `${gatewayUrl}/gateway/v1/mge/sessionUpload.mge?sessionkey=${encodeURIComponent(sessionKey)}&fitem=S&salvar=S&useCache=N`;
+      console.log(`[Sankhya] Upload canhoto: ${sessionUploadUrl}, size=${imageBytes.length} bytes`);
+
+      let uploadResponse = await fetch(sessionUploadUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -566,12 +567,11 @@ Deno.serve(async (req) => {
         body: formData,
       });
 
-      // If 401, re-authenticate and retry
       if (uploadResponse.status === 401) {
-        console.log('[Sankhya] Token expirado no upload, re-autenticando...');
+        console.log('[Sankhya] Token expirado, re-autenticando...');
         tokenCache.accessToken = null;
         const newToken = await authenticate();
-        uploadResponse = await fetch(uploadUrl, {
+        uploadResponse = await fetch(sessionUploadUrl, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${newToken}`,
@@ -581,12 +581,69 @@ Deno.serve(async (req) => {
         });
       }
 
-      const uploadResultText = await uploadResponse.text();
-      console.log(`[Sankhya] Upload response status: ${uploadResponse.status}`);
-      console.log('[Sankhya] Upload response body:', uploadResultText.substring(0, 1000));
+      const uploadText = await uploadResponse.text();
+      console.log(`[Sankhya] sessionUpload status: ${uploadResponse.status}`);
+      console.log('[Sankhya] sessionUpload body:', uploadText.substring(0, 500));
+
+      // Step 3b: Link the uploaded file via AnexoSistemaSP.salvar
+      const salvarUrl = `${gatewayUrl}/gateway/v1/mge/service.sbr?serviceName=AnexoSistemaSP.salvar&outputType=json`;
+      const salvarBody = {
+        serviceName: 'AnexoSistemaSP.salvar',
+        requestBody: {
+          params: {
+            pkEntity: String(nunotaInt),
+            keySession: sessionKey,
+            nameEntity: 'AD_CANHOTOS',
+            description: fileName,
+            keyAttach: '',
+            typeAcess: 'ALL',
+            typeApres: 'GLO',
+            nuAttach: '',
+            nameAttach: fileName,
+            fileSelect: 1,
+            oldFile: '',
+          },
+        },
+      };
+
+      console.log('[Sankhya] AnexoSistemaSP.salvar payload:', JSON.stringify(salvarBody));
+
+      const tokenSalvar = await authenticate();
+      const salvarHeaders: Record<string, string> = {
+        'Authorization': `Bearer ${tokenSalvar}`,
+        'Content-Type': 'application/json',
+      };
+
+      let salvarResponse = await fetch(salvarUrl, {
+        method: 'POST',
+        headers: salvarHeaders,
+        body: JSON.stringify(salvarBody),
+      });
+
+      if (salvarResponse.status === 401) {
+        tokenCache.accessToken = null;
+        const newToken = await authenticate();
+        salvarHeaders['Authorization'] = `Bearer ${newToken}`;
+        salvarResponse = await fetch(salvarUrl, {
+          method: 'POST',
+          headers: salvarHeaders,
+          body: JSON.stringify(salvarBody),
+        });
+      }
+
+      const salvarText = await salvarResponse.text();
+      console.log(`[Sankhya] AnexoSistemaSP.salvar status: ${salvarResponse.status}`);
+      console.log('[Sankhya] AnexoSistemaSP.salvar body:', salvarText.substring(0, 1000));
 
       return new Response(
-        JSON.stringify({ success: uploadResponse.ok, message: 'Upload canhoto via gateway', nunota: nunotaInt, status: uploadResponse.status, response: uploadResultText.substring(0, 500) }),
+        JSON.stringify({ 
+          success: salvarResponse.ok, 
+          message: 'Upload canhoto com vinculação', 
+          nunota: nunotaInt, 
+          uploadStatus: uploadResponse.status,
+          salvarStatus: salvarResponse.status,
+          salvarResponse: salvarText.substring(0, 500),
+        }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
