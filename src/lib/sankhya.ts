@@ -54,6 +54,8 @@ export interface PedidoData {
   SEQCARGA: number;
   REENT: string;
   NOMEREG: string;
+  CODVEND?: number;
+  DTNEG?: string;
 }
 
 export const sankhya = {
@@ -105,7 +107,7 @@ export const sankhya = {
     return data;
   },
 
-  async migrateCanhotos(canhotos: { nunota: number; numnota: number; storagePath: string }[]): Promise<SankhyaResponse> {
+  async migrateCanhotos(canhotos: { nunota: number; numnota: number; storagePath: string; codparc?: number; vlrnota?: number; dtneg?: string; codvend?: number }[]): Promise<SankhyaResponse> {
     const { data, error } = await supabase.functions.invoke("sankhya-api", {
       body: { action: "migrateCanhotos", canhotos },
     });
