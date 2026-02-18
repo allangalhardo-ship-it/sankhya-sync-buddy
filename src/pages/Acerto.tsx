@@ -30,6 +30,10 @@ interface Pedido {
   fotoFile?: File;
   is_reentrega?: boolean;
   vendedor?: string;
+  codparc?: number;
+  vlrnota?: number;
+  dtneg?: string;
+  codvend?: number;
 }
 
 interface OrdemCarga {
@@ -201,6 +205,10 @@ const Acerto = () => {
           observacao: [p.CARTASELO, p.AGENDAMENTO, p.PRIORIDADE].filter(Boolean).join(" | "),
           is_reentrega: p.REENT === "REENTREGA",
           vendedor: p.VENDEDOR || "",
+          codparc: p.CODIGO_DO_CLIENTE,
+          vlrnota: p.VALOR_NOTA,
+          dtneg: (p as any).DTNEG || "",
+          codvend: (p as any).CODVEND || 0,
         })),
       };
 
@@ -474,6 +482,10 @@ const Acerto = () => {
           nunota: parseInt(p.numero_pedido, 10),
           numnota: parseInt(p.numero_unico || "0", 10),
           storagePath: p.foto_canhoto_url!,
+          codparc: p.codparc,
+          vlrnota: p.vlrnota,
+          dtneg: p.dtneg,
+          codvend: p.codvend,
         }));
 
       if (canhotosToUpload.length > 0) {

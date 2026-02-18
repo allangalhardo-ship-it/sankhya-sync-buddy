@@ -292,6 +292,7 @@ SELECT
   IMP.NUNOTA,
   NF.STATUS AS STATUS_ACERTO,
   VEN.APELIDO AS VENDEDOR,
+  CAB.CODVEND,
   IMP.NUMNOTA,
   IMP.DESCRTIPPARC,
   CASE WHEN CAB.AD_CARTASELO = 'SIM' THEN 'CARTA SELO' ELSE '' END AS CARTASELO,
@@ -548,10 +549,12 @@ Deno.serve(async (req) => {
       // Step 1: Create record in AD_CANHOTOS via CRUDServiceProvider.saveRecord
       console.log(`[Sankhya] Criando registro AD_CANHOTOS: NUNOTA=${nunotaInt}, NUMNOTA=${numnotaInt}`);
       try {
-        await saveCrudRecord('AD_CANHOTOS', {
-          NUNOTA: nunotaInt,
-          NUMNOTA: numnotaInt,
-        });
+        const crudFields: Record<string, any> = { NUNOTA: nunotaInt, NUMNOTA: numnotaInt };
+        if (body.codparc) crudFields.CODPARC = parseInt(String(body.codparc), 10);
+        if (body.vlrnota !== undefined && body.vlrnota !== null) crudFields.VLRNOTA = parseFloat(String(body.vlrnota));
+        if (body.dtneg) crudFields.DTNEG = body.dtneg;
+        if (body.codvend) crudFields.CODVEND = parseInt(String(body.codvend), 10);
+        await saveCrudRecord('AD_CANHOTOS', crudFields);
       } catch (e) {
         console.warn('[Sankhya] Aviso ao criar registro AD_CANHOTOS (pode já existir):', e instanceof Error ? e.message : e);
       }
@@ -652,16 +655,22 @@ Deno.serve(async (req) => {
 
       try {
         try {
-          await saveCrudRecord('AD_CANHOTOS', {
-            NUNOTA: nunotaInt,
-            NUMNOTA: numnotaInt,
-            CANHOTO2: fileSessionRef,
-          });
+          const saveFields2: Record<string, any> = { NUNOTA: nunotaInt, NUMNOTA: numnotaInt, CANHOTO2: fileSessionRef };
+          if (body.codparc) saveFields2.CODPARC = parseInt(String(body.codparc), 10);
+          if (body.vlrnota !== undefined && body.vlrnota !== null) saveFields2.VLRNOTA = parseFloat(String(body.vlrnota));
+          if (body.dtneg) saveFields2.DTNEG = body.dtneg;
+          if (body.codvend) saveFields2.CODVEND = parseInt(String(body.codvend), 10);
+          await saveCrudRecord('AD_CANHOTOS', saveFields2);
         } catch (insertErr) {
           const msg = insertErr instanceof Error ? insertErr.message : '';
           if (msg.includes('PRIMARY KEY') || msg.includes('duplicada') || msg.includes('duplicate')) {
             console.log('[Sankhya] Registro já existe, atualizando campo CANHOTO2...');
-            await updateCrudRecord('AD_CANHOTOS', { NUNOTA: nunotaInt }, { CANHOTO2: fileSessionRef });
+            const updateFields2: Record<string, any> = { CANHOTO2: fileSessionRef };
+            if (body.codparc) updateFields2.CODPARC = parseInt(String(body.codparc), 10);
+            if (body.vlrnota !== undefined && body.vlrnota !== null) updateFields2.VLRNOTA = parseFloat(String(body.vlrnota));
+            if (body.dtneg) updateFields2.DTNEG = body.dtneg;
+            if (body.codvend) updateFields2.CODVEND = parseInt(String(body.codvend), 10);
+            await updateCrudRecord('AD_CANHOTOS', { NUNOTA: nunotaInt }, updateFields2);
           } else {
             throw insertErr;
           }
@@ -713,7 +722,12 @@ Deno.serve(async (req) => {
         try {
           // 1. Create AD_CANHOTOS record
           try {
-            await saveCrudRecord('AD_CANHOTOS', { NUNOTA: nunotaInt, NUMNOTA: numnotaInt });
+            const crudFields: Record<string, any> = { NUNOTA: nunotaInt, NUMNOTA: numnotaInt };
+            if (c.codparc) crudFields.CODPARC = parseInt(String(c.codparc), 10);
+            if (c.vlrnota !== undefined && c.vlrnota !== null) crudFields.VLRNOTA = parseFloat(String(c.vlrnota));
+            if (c.dtneg) crudFields.DTNEG = c.dtneg;
+            if (c.codvend) crudFields.CODVEND = parseInt(String(c.codvend), 10);
+            await saveCrudRecord('AD_CANHOTOS', crudFields);
           } catch (_e) { /* may exist */ }
 
           // 2. Download from bucket
@@ -757,11 +771,21 @@ Deno.serve(async (req) => {
           // 4. Link file to CANHOTO2 field
           const fileSessionRef = `$file.session.key{${sessionKey}}`;
           try {
-            await saveCrudRecord('AD_CANHOTOS', { NUNOTA: nunotaInt, NUMNOTA: numnotaInt, CANHOTO2: fileSessionRef });
+            const saveFields: Record<string, any> = { NUNOTA: nunotaInt, NUMNOTA: numnotaInt, CANHOTO2: fileSessionRef };
+            if (c.codparc) saveFields.CODPARC = parseInt(String(c.codparc), 10);
+            if (c.vlrnota !== undefined && c.vlrnota !== null) saveFields.VLRNOTA = parseFloat(String(c.vlrnota));
+            if (c.dtneg) saveFields.DTNEG = c.dtneg;
+            if (c.codvend) saveFields.CODVEND = parseInt(String(c.codvend), 10);
+            await saveCrudRecord('AD_CANHOTOS', saveFields);
           } catch (insertErr) {
             const msg = insertErr instanceof Error ? insertErr.message : '';
             if (msg.includes('PRIMARY KEY') || msg.includes('duplicada') || msg.includes('duplicate')) {
-              await updateCrudRecord('AD_CANHOTOS', { NUNOTA: nunotaInt }, { CANHOTO2: fileSessionRef });
+              const updateFields: Record<string, any> = { CANHOTO2: fileSessionRef };
+              if (c.codparc) updateFields.CODPARC = parseInt(String(c.codparc), 10);
+              if (c.vlrnota !== undefined && c.vlrnota !== null) updateFields.VLRNOTA = parseFloat(String(c.vlrnota));
+              if (c.dtneg) updateFields.DTNEG = c.dtneg;
+              if (c.codvend) updateFields.CODVEND = parseInt(String(c.codvend), 10);
+              await updateCrudRecord('AD_CANHOTOS', { NUNOTA: nunotaInt }, updateFields);
             } else {
               throw insertErr;
             }
