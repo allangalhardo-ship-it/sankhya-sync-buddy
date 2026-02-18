@@ -596,16 +596,14 @@ Deno.serve(async (req) => {
         );
       }
 
-      // Step 3: Upload file via sessionUpload.mge + save metadata in CANHOTO field
+      // Step 3: Upload file via sessionUpload.mge + link to CANHOTO2 (image field) via $file.session.key
       const token = await authenticate();
       const gatewayUrl = Deno.env.get('SANKHYA_GATEWAY_URL')!;
 
       const ext = mimeType.includes('png') ? 'png' : 'jpg';
-      const timestamp = Date.now();
-      const internalName = `canhoto_${nunotaInt}_${timestamp}.${ext}`;
-      const fileName = `canhoto_${nunotaInt}.${ext}`;
+      const internalName = `canhoto_${nunotaInt}.${ext}`;
 
-      // Build multipart body manually to ensure correct format
+      // Build multipart body manually
       const boundary = `----FormBoundary${Date.now()}${Math.random().toString(36).substring(2)}`;
       const headerPart = `--${boundary}\r\nContent-Disposition: form-data; name="arquivo"; filename="${internalName}"\r\nContent-Type: ${mimeType}\r\n\r\n`;
       const footerPart = `\r\n--${boundary}--\r\n`;
@@ -617,12 +615,11 @@ Deno.serve(async (req) => {
       multipartBody.set(imageBytes, headerBytes.length);
       multipartBody.set(footerBytes, headerBytes.length + imageBytes.length);
 
-      // Step 3a: Upload file to server via sessionUpload.mge
-      // sessionkey format for custom fields: {TableName}_{FieldName} (without PK!)
-      // Reference: community post "Dica Salvando Imagens" uses "Produto_IMAGEM"
-      const sessionKey = `AD_CANHOTOS_CANHOTO`;
+      // Step 3a: Upload file to session
+      // For image fields, sessionkey = {Table}_{Field}
+      const sessionKey = `AD_CANHOTOS_CANHOTO2`;
       const sessionUploadUrl = `${gatewayUrl}/gateway/v1/mge/sessionUpload.mge?sessionkey=${encodeURIComponent(sessionKey)}&fitem=S&salvar=S&useCache=N`;
-      console.log(`[Sankhya] Upload canhoto: ${sessionUploadUrl}, size=${imageBytes.length} bytes, file=${internalName}`);
+      console.log(`[Sankhya] Upload canhoto via sessionUpload: sessionkey=${sessionKey}, size=${imageBytes.length} bytes, file=${internalName}`);
 
       const doUpload = async (authToken: string) => {
         return await fetch(sessionUploadUrl, {
@@ -646,37 +643,25 @@ Deno.serve(async (req) => {
 
       const uploadText = await uploadResponse.text();
       console.log(`[Sankhya] sessionUpload status: ${uploadResponse.status}`);
-      console.log('[Sankhya] sessionUpload body (full):', uploadText);
+      console.log('[Sankhya] sessionUpload body:', uploadText.substring(0, 500));
 
-      // Step 3b: Build metadata JSON and save to CANHOTO field via CRUDServiceProvider.saveRecord
-      const now = new Date();
-      const lastModifiedDate = `${now.toLocaleString('en-US', { month: 'short' })} ${now.getDate()}, ${now.getFullYear()} ${now.toLocaleString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}`;
-      
-      const fileMetadata = [{
-        name: fileName,
-        size: imageBytes.length,
-        type: mimeType,
-        internalName: internalName,
-        path: 'Repo://Sistema/Arquivos//AD_CANHOTOS',
-        lastModifiedDate: lastModifiedDate,
-      }];
+      // Step 3b: Save/update AD_CANHOTOS record with $file.session.key reference
+      // This tells Sankhya to take the file from the session and store it in the CANHOTO2 image field
+      const fileSessionRef = `$file.session.key{${sessionKey}}`;
+      console.log(`[Sankhya] Salvando registro com CANHOTO2 = ${fileSessionRef}`);
 
-      const canhotFieldValue = `__start_fileinformation__${JSON.stringify(fileMetadata)}__end_fileinformation__`;
-      console.log(`[Sankhya] CANHOTO field value: ${canhotFieldValue}`);
-
-      // Save metadata to CANHOTO field - try insert first, then update if exists
       try {
         try {
           await saveCrudRecord('AD_CANHOTOS', {
             NUNOTA: nunotaInt,
             NUMNOTA: numnotaInt,
-            CANHOTO: canhotFieldValue,
+            CANHOTO2: fileSessionRef,
           });
         } catch (insertErr) {
           const msg = insertErr instanceof Error ? insertErr.message : '';
           if (msg.includes('PRIMARY KEY') || msg.includes('duplicada') || msg.includes('duplicate')) {
-            console.log('[Sankhya] Registro já existe, atualizando campo CANHOTO...');
-            await updateCrudRecord('AD_CANHOTOS', { NUNOTA: nunotaInt }, { CANHOTO: canhotFieldValue });
+            console.log('[Sankhya] Registro já existe, atualizando campo CANHOTO2...');
+            await updateCrudRecord('AD_CANHOTOS', { NUNOTA: nunotaInt }, { CANHOTO2: fileSessionRef });
           } else {
             throw insertErr;
           }
@@ -685,20 +670,19 @@ Deno.serve(async (req) => {
         return new Response(
           JSON.stringify({ 
             success: true, 
-            message: 'Upload canhoto com metadados gravados no campo', 
+            message: 'Canhoto uploaded and linked to CANHOTO2 image field', 
             nunota: nunotaInt, 
             uploadStatus: uploadResponse.status,
-            fieldValue: canhotFieldValue,
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       } catch (saveError) {
         const errMsg = saveError instanceof Error ? saveError.message : 'Erro desconhecido';
-        console.error('[Sankhya] Erro ao salvar metadados no campo CANHOTO:', errMsg);
+        console.error('[Sankhya] Erro ao salvar registro com referência de sessão:', errMsg);
         return new Response(
           JSON.stringify({ 
             success: false, 
-            error: `Upload OK mas erro ao gravar metadados: ${errMsg}`,
+            error: `Upload OK mas erro ao vincular: ${errMsg}`,
             nunota: nunotaInt, 
             uploadStatus: uploadResponse.status,
           }),
