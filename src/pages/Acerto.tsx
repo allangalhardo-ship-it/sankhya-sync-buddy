@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 
 
-type StatusEntrega = "pendente" | "entregue" | "devolvido" | "reentrega";
+type StatusEntrega = "pendente" | "entregue" | "devolvido" | "reentrega" | "nao_carregado";
 
 interface Pedido {
   id?: string;
@@ -48,6 +48,7 @@ const statusConfig: Record<StatusEntrega, { label: string; icon: typeof CheckCir
   entregue: { label: "Entregue", icon: CheckCircle2, className: "bg-success text-success-foreground" },
   devolvido: { label: "Devolvido", icon: XCircle, className: "bg-destructive text-destructive-foreground" },
   reentrega: { label: "Reentrega", icon: RotateCcw, className: "bg-warning text-warning-foreground" },
+  nao_carregado: { label: "Não Carreg.", icon: Truck, className: "bg-orange-500 text-white" },
 };
 
 const Acerto = () => {
@@ -404,6 +405,7 @@ const Acerto = () => {
       entregue: 1,
       devolvido: 5,
       reentrega: 3,
+      nao_carregado: 9,
     };
 
     try {
@@ -674,7 +676,7 @@ const Acerto = () => {
                       </div>
 
                       {/* Status Buttons */}
-                      <div className="grid grid-cols-4 gap-2">
+                      <div className="grid grid-cols-5 gap-1.5">
                         {(Object.entries(statusConfig) as [StatusEntrega, typeof statusConfig.pendente][]).map(
                           ([key, config]) => {
                             const Icon = config.icon;
