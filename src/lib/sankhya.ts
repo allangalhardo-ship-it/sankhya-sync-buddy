@@ -97,9 +97,17 @@ export const sankhya = {
     return data;
   },
 
-  async uploadCanhoto(nunota: number, numnota: number, imageBase64: string, imageMimeType?: string): Promise<SankhyaResponse> {
+  async uploadCanhoto(nunota: number, numnota: number, imageBase64?: string, imageMimeType?: string, storagePath?: string): Promise<SankhyaResponse> {
     const { data, error } = await supabase.functions.invoke("sankhya-api", {
-      body: { action: "uploadCanhoto", nunota, numnota, imageBase64, imageMimeType },
+      body: { action: "uploadCanhoto", nunota, numnota, imageBase64, imageMimeType, storagePath },
+    });
+    if (error) return { success: false, error: error.message };
+    return data;
+  },
+
+  async migrateCanhotos(canhotos: { nunota: number; numnota: number; storagePath: string }[]): Promise<SankhyaResponse> {
+    const { data, error } = await supabase.functions.invoke("sankhya-api", {
+      body: { action: "migrateCanhotos", canhotos },
     });
     if (error) return { success: false, error: error.message };
     return data;

@@ -691,8 +691,105 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Action: migrateCanhotos - batch migrate canhotos from storage to Sankhya
+    if (action === 'migrateCanhotos') {
+      const { canhotos } = body;
+      if (!Array.isArray(canhotos) || canhotos.length === 0) {
+        return new Response(
+          JSON.stringify({ success: false, error: 'canhotos é obrigatório (array)' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const results: { nunota: number; success: boolean; error?: string }[] = [];
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+      for (const c of canhotos) {
+        const nunotaInt = parseInt(String(c.nunota), 10);
+        const numnotaInt = parseInt(String(c.numnota), 10);
+        const storagePath = c.storagePath;
+
+        try {
+          // 1. Create AD_CANHOTOS record
+          try {
+            await saveCrudRecord('AD_CANHOTOS', { NUNOTA: nunotaInt, NUMNOTA: numnotaInt });
+          } catch (_e) { /* may exist */ }
+
+          // 2. Download from bucket
+          const dlResponse = await fetch(`${supabaseUrl}/storage/v1/object/canhotos/${storagePath}`, {
+            headers: { 'Authorization': `Bearer ${serviceKey}` },
+          });
+          if (!dlResponse.ok) {
+            results.push({ nunota: nunotaInt, success: false, error: `Download falhou: ${dlResponse.status}` });
+            continue;
+          }
+          const mimeType = dlResponse.headers.get('content-type') || 'image/jpeg';
+          const imageBytes = new Uint8Array(await dlResponse.arrayBuffer());
+
+          // 3. Upload via sessionUpload.mge
+          const token = await authenticate();
+          const gatewayUrl = Deno.env.get('SANKHYA_GATEWAY_URL')!;
+          const ext = mimeType.includes('png') ? 'png' : 'jpg';
+          const internalName = `canhoto_${nunotaInt}.${ext}`;
+          const sessionKey = 'AD_CANHOTOS_CANHOTO2';
+
+          const boundary = `----FormBoundary${Date.now()}${Math.random().toString(36).substring(2)}`;
+          const headerPart = `--${boundary}\r\nContent-Disposition: form-data; name="arquivo"; filename="${internalName}"\r\nContent-Type: ${mimeType}\r\n\r\n`;
+          const footerPart = `\r\n--${boundary}--\r\n`;
+          const headerBytes = new TextEncoder().encode(headerPart);
+          const footerBytes = new TextEncoder().encode(footerPart);
+          const multipartBody = new Uint8Array(headerBytes.length + imageBytes.length + footerBytes.length);
+          multipartBody.set(headerBytes, 0);
+          multipartBody.set(imageBytes, headerBytes.length);
+          multipartBody.set(footerBytes, headerBytes.length + imageBytes.length);
+
+          const sessionUploadUrl = `${gatewayUrl}/gateway/v1/mge/sessionUpload.mge?sessionkey=${encodeURIComponent(sessionKey)}&fitem=S&salvar=S&useCache=N`;
+          await fetch(sessionUploadUrl, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': `multipart/form-data; boundary=${boundary}`,
+            },
+            body: multipartBody,
+          });
+
+          // 4. Link file to CANHOTO2 field
+          const fileSessionRef = `$file.session.key{${sessionKey}}`;
+          try {
+            await saveCrudRecord('AD_CANHOTOS', { NUNOTA: nunotaInt, NUMNOTA: numnotaInt, CANHOTO2: fileSessionRef });
+          } catch (insertErr) {
+            const msg = insertErr instanceof Error ? insertErr.message : '';
+            if (msg.includes('PRIMARY KEY') || msg.includes('duplicada') || msg.includes('duplicate')) {
+              await updateCrudRecord('AD_CANHOTOS', { NUNOTA: nunotaInt }, { CANHOTO2: fileSessionRef });
+            } else {
+              throw insertErr;
+            }
+          }
+
+          // 5. Delete from bucket
+          const delResponse = await fetch(`${supabaseUrl}/storage/v1/object/canhotos/${storagePath}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${serviceKey}` },
+          });
+          console.log(`[Sankhya] Migrate NUNOTA=${nunotaInt}: upload OK, bucket delete=${delResponse.status}`);
+          results.push({ nunota: nunotaInt, success: true });
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : 'Erro desconhecido';
+          console.error(`[Sankhya] Migrate NUNOTA=${nunotaInt} falhou:`, errMsg);
+          results.push({ nunota: nunotaInt, success: false, error: errMsg });
+        }
+      }
+
+      const successCount = results.filter(r => r.success).length;
+      return new Response(
+        JSON.stringify({ success: true, message: `${successCount}/${results.length} canhotos migrados`, results }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     return new Response(
-      JSON.stringify({ success: false, error: 'Action inválida. Use "test", "getCabecalho", "getPedidos", "saveAcerto", "getMotivosDevol" ou "request".' }),
+      JSON.stringify({ success: false, error: 'Action inválida.' }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
