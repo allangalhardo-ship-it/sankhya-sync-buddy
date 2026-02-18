@@ -459,28 +459,6 @@ const Acerto = () => {
         }
       }
 
-      // Upload canhotos to Sankhya AD_CANHOTOS via storagePath (server-side)
-      for (const pedido of ordemCarga.pedidos) {
-        if (pedido.numero_pedido === "Sem pedidos") continue;
-        if (!pedido.foto_canhoto_url) continue;
-
-        try {
-          const nunota = parseInt(pedido.numero_pedido, 10);
-          const numnota = parseInt(pedido.numero_unico || "0", 10);
-          const uploadResult = await sankhya.uploadCanhoto(nunota, numnota, undefined, undefined, pedido.foto_canhoto_url);
-          if (uploadResult.success) {
-            console.log(`Canhoto enviado ao Sankhya: NUNOTA=${nunota}`);
-            // Delete from bucket after successful upload
-            await supabase.storage.from("canhotos").remove([pedido.foto_canhoto_url]);
-            console.log(`Canhoto removido do bucket: ${pedido.foto_canhoto_url}`);
-          } else {
-            console.error(`Erro ao enviar canhoto NUNOTA=${nunota}:`, uploadResult.error);
-          }
-        } catch (err) {
-          console.error("Erro ao processar canhoto para Sankhya:", err);
-        }
-      }
-
       await supabase
         .from("acertos")
         .update({ status: "finalizado", finalizado_at: new Date().toISOString() })
@@ -488,6 +466,27 @@ const Acerto = () => {
 
       toast({ title: "Acerto finalizado!", description: "Dados salvos no sistema e no Sankhya com sucesso." });
       navigate("/dashboard");
+
+      // Upload canhotos to Sankhya in background (fire-and-forget)
+      const canhotosToUpload = ordemCarga.pedidos
+        .filter((p) => p.numero_pedido !== "Sem pedidos" && p.foto_canhoto_url)
+        .map((p) => ({
+          nunota: parseInt(p.numero_pedido, 10),
+          numnota: parseInt(p.numero_unico || "0", 10),
+          storagePath: p.foto_canhoto_url!,
+        }));
+
+      if (canhotosToUpload.length > 0) {
+        sankhya.migrateCanhotos(canhotosToUpload).then((result) => {
+          if (result.success) {
+            console.log(`Canhotos enviados ao Sankhya em background: ${canhotosToUpload.length} registros`);
+          } else {
+            console.error("Erro ao enviar canhotos em background:", result.error);
+          }
+        }).catch((err) => {
+          console.error("Erro ao enviar canhotos em background:", err);
+        });
+      }
     } catch (err) {
       console.error("Erro ao finalizar:", err);
       toast({ title: "Erro", description: "Erro ao finalizar o acerto.", variant: "destructive" });
