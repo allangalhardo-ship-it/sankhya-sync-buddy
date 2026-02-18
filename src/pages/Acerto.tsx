@@ -459,64 +459,25 @@ const Acerto = () => {
         }
       }
 
-      // Upload canhotos to Sankhya AD_CANHOTOS
+      // Upload canhotos to Sankhya AD_CANHOTOS via storagePath (server-side)
       for (const pedido of ordemCarga.pedidos) {
         if (pedido.numero_pedido === "Sem pedidos") continue;
-        const hasNewPhoto = pedido.fotoFile;
-        const hasExistingPhoto = pedido.foto_canhoto_url;
+        if (!pedido.foto_canhoto_url) continue;
 
-        if (hasNewPhoto || hasExistingPhoto) {
-          try {
-            let base64: string | null = null;
-            let mimeType = "image/jpeg";
-
-            if (hasNewPhoto) {
-              // Convert File to base64
-              const buffer = await pedido.fotoFile!.arrayBuffer();
-              const bytes = new Uint8Array(buffer);
-              let binary = "";
-              for (let i = 0; i < bytes.length; i++) {
-                binary += String.fromCharCode(bytes[i]);
-              }
-              base64 = btoa(binary);
-              mimeType = pedido.fotoFile!.type || "image/jpeg";
-            } else if (hasExistingPhoto) {
-              // Download from bucket and convert to base64
-              const { data: fileData, error: dlError } = await supabase.storage
-                .from("canhotos")
-                .download(pedido.foto_canhoto_url!);
-              if (dlError || !fileData) {
-                console.error("Erro ao baixar canhoto do bucket:", dlError);
-                continue;
-              }
-              const buffer = await fileData.arrayBuffer();
-              const bytes = new Uint8Array(buffer);
-              let binary = "";
-              for (let i = 0; i < bytes.length; i++) {
-                binary += String.fromCharCode(bytes[i]);
-              }
-              base64 = btoa(binary);
-              mimeType = fileData.type || "image/jpeg";
-            }
-
-            if (base64) {
-              const nunota = parseInt(pedido.numero_pedido, 10);
-              const numnota = parseInt(pedido.numero_unico || "0", 10);
-              const uploadResult = await sankhya.uploadCanhoto(nunota, numnota, base64, mimeType);
-              if (uploadResult.success) {
-                console.log(`Canhoto enviado ao Sankhya: NUNOTA=${nunota}`);
-                // Delete from bucket after successful upload
-                if (pedido.foto_canhoto_url) {
-                  await supabase.storage.from("canhotos").remove([pedido.foto_canhoto_url]);
-                  console.log(`Canhoto removido do bucket: ${pedido.foto_canhoto_url}`);
-                }
-              } else {
-                console.error(`Erro ao enviar canhoto NUNOTA=${nunota}:`, uploadResult.error);
-              }
-            }
-          } catch (err) {
-            console.error("Erro ao processar canhoto para Sankhya:", err);
+        try {
+          const nunota = parseInt(pedido.numero_pedido, 10);
+          const numnota = parseInt(pedido.numero_unico || "0", 10);
+          const uploadResult = await sankhya.uploadCanhoto(nunota, numnota, undefined, undefined, pedido.foto_canhoto_url);
+          if (uploadResult.success) {
+            console.log(`Canhoto enviado ao Sankhya: NUNOTA=${nunota}`);
+            // Delete from bucket after successful upload
+            await supabase.storage.from("canhotos").remove([pedido.foto_canhoto_url]);
+            console.log(`Canhoto removido do bucket: ${pedido.foto_canhoto_url}`);
+          } else {
+            console.error(`Erro ao enviar canhoto NUNOTA=${nunota}:`, uploadResult.error);
           }
+        } catch (err) {
+          console.error("Erro ao processar canhoto para Sankhya:", err);
         }
       }
 
