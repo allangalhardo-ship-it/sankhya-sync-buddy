@@ -474,10 +474,7 @@ const Acerto = () => {
         .update({ status: "finalizado", finalizado_at: new Date().toISOString() })
         .eq("id", acertoId);
 
-      toast({ title: "Acerto finalizado!", description: "Dados salvos no sistema e no Sankhya com sucesso." });
-      navigate("/dashboard");
-
-      // Upload canhotos to Sankhya in background (fire-and-forget)
+      // Upload canhotos to Sankhya BEFORE navigating (to avoid request cancellation)
       const canhotosToUpload = ordemCarga.pedidos
         .filter((p) => p.numero_pedido !== "Sem pedidos" && p.foto_canhoto_url)
         .map((p) => ({
@@ -491,16 +488,20 @@ const Acerto = () => {
         }));
 
       if (canhotosToUpload.length > 0) {
-        sankhya.migrateCanhotos(canhotosToUpload).then((result) => {
+        try {
+          const result = await sankhya.migrateCanhotos(canhotosToUpload);
           if (result.success) {
-            console.log(`Canhotos enviados ao Sankhya em background: ${canhotosToUpload.length} registros`);
+            console.log(`Canhotos enviados ao Sankhya: ${canhotosToUpload.length} registros`);
           } else {
-            console.error("Erro ao enviar canhotos em background:", result.error);
+            console.error("Erro ao enviar canhotos:", result.error);
           }
-        }).catch((err) => {
-          console.error("Erro ao enviar canhotos em background:", err);
-        });
+        } catch (err) {
+          console.error("Erro ao enviar canhotos:", err);
+        }
       }
+
+      toast({ title: "Acerto finalizado!", description: "Dados salvos no sistema e no Sankhya com sucesso." });
+      navigate("/dashboard");
     } catch (err) {
       console.error("Erro ao finalizar:", err);
       toast({ title: "Erro", description: "Erro ao finalizar o acerto.", variant: "destructive" });
