@@ -929,6 +929,78 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Action: batchResyncAcertos - re-sync all finalized acertos to Sankhya
+    if (action === 'batchResyncAcertos') {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
+      const sb = createClient(supabaseUrl, supabaseKey);
+
+      const statusMap: Record<string, number> = {
+        entregue: 1, devolvido: 5, reentrega: 3, pendente: 8, nao_carregado: 9,
+      };
+
+      // Get all finalized acerto pedidos
+      const { data: rows, error: dbErr } = await sb
+        .from('acerto_pedidos')
+        .select('numero_pedido, status_entrega, acertos!inner(numero_ordem_carga, status)')
+        .eq('acertos.status', 'finalizado')
+        .neq('numero_pedido', 'Sem pedidos');
+
+      if (dbErr) {
+        return new Response(JSON.stringify({ success: false, error: dbErr.message }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      // Deduplicate by (OC, NUNOTA) keeping first occurrence
+      const seen = new Set<string>();
+      const unique = (rows || []).filter((r: any) => {
+        const key = `${r.acertos.numero_ordem_carga}_${r.numero_pedido}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      console.log(`[Sankhya] batchResync: ${unique.length} pedidos únicos para re-sincronizar`);
+
+      const batchSize = body.batchSize || 20;
+      const offset = body.offset || 0;
+      const batch = unique.slice(offset, offset + batchSize);
+
+      const results: any[] = [];
+      for (const row of batch) {
+        const nunota = parseInt(row.numero_pedido, 10);
+        const oc = parseInt((row as any).acertos.numero_ordem_carga, 10);
+        const status = statusMap[row.status_entrega] || 8;
+
+        try {
+          const checkSql = `SELECT NUNOTA FROM AD_NFACERTO WHERE NUNOTA = ${nunota} AND ORDEMCARGA = ${oc}`;
+          const checkResult = await executeQuery(checkSql);
+          const existing = parseDbExplorerResponse(checkResult);
+
+          if (existing.length === 0) {
+            await saveCrudRecord('AD_NFACERTO', { NUNOTA: nunota, ORDEMCARGA: oc, STATUS: status });
+            results.push({ nunota, oc, status, action: 'inserted', success: true });
+          } else {
+            await updateCrudRecord('AD_NFACERTO', { NUNOTA: nunota, ORDEMCARGA: oc }, { STATUS: status });
+            results.push({ nunota, oc, status, action: 'updated', success: true });
+          }
+        } catch (e) {
+          results.push({ nunota, oc, status, action: 'error', success: false, error: e instanceof Error ? e.message : String(e) });
+        }
+      }
+
+      const successCount = results.filter(r => r.success).length;
+      return new Response(JSON.stringify({
+        success: true,
+        message: `${successCount}/${batch.length} pedidos sincronizados (offset=${offset}, total=${unique.length})`,
+        results,
+        totalPedidos: unique.length,
+        hasMore: offset + batchSize < unique.length,
+        nextOffset: offset + batchSize,
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
     return new Response(
       JSON.stringify({ success: false, error: 'Action inválida.' }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
