@@ -630,6 +630,7 @@ Deno.serve(async (req) => {
           headers: {
             'Authorization': `Bearer ${authToken}`,
             'Content-Type': `multipart/form-data; boundary=${boundary}`,
+            'Accept': 'text/html',
           },
           body: multipartBody,
         });
@@ -647,6 +648,14 @@ Deno.serve(async (req) => {
       const uploadText = await uploadResponse.text();
       console.log(`[Sankhya] sessionUpload status: ${uploadResponse.status}`);
       console.log('[Sankhya] sessionUpload body:', uploadText.substring(0, 500));
+
+      if (!uploadResponse.ok) {
+        console.error('[Sankhya] sessionUpload falhou:', uploadResponse.status, uploadText);
+        return new Response(
+          JSON.stringify({ success: false, error: `sessionUpload falhou: ${uploadResponse.status}`, nunota: nunotaInt }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
 
       // Step 3b: Save/update AD_CANHOTOS record with $file.session.key reference
       // This tells Sankhya to take the file from the session and store it in the CANHOTO2 image field
@@ -759,14 +768,34 @@ Deno.serve(async (req) => {
           multipartBody.set(footerBytes, headerBytes.length + imageBytes.length);
 
           const sessionUploadUrl = `${gatewayUrl}/gateway/v1/mge/sessionUpload.mge?sessionkey=${encodeURIComponent(sessionKey)}&fitem=S&salvar=S&useCache=N`;
-          await fetch(sessionUploadUrl, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': `multipart/form-data; boundary=${boundary}`,
-            },
-            body: multipartBody,
-          });
+          
+          const doSessionUpload = async (authToken: string) => {
+            return await fetch(sessionUploadUrl, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'Content-Type': `multipart/form-data; boundary=${boundary}`,
+                'Accept': 'text/html',
+              },
+              body: multipartBody,
+            });
+          };
+
+          let uploadResp = await doSessionUpload(token);
+          if (uploadResp.status === 401) {
+            tokenCache.accessToken = null;
+            const newToken2 = await authenticate();
+            uploadResp = await doSessionUpload(newToken2);
+          }
+
+          const uploadRespText = await uploadResp.text();
+          console.log(`[Sankhya] Migrate NUNOTA=${nunotaInt}: sessionUpload status=${uploadResp.status}`);
+
+          if (!uploadResp.ok) {
+            console.error(`[Sankhya] Migrate NUNOTA=${nunotaInt}: sessionUpload falhou:`, uploadRespText.substring(0, 300));
+            results.push({ nunota: nunotaInt, success: false, error: `sessionUpload falhou: ${uploadResp.status}` });
+            continue;
+          }
 
           // 4. Link file to CANHOTO2 field
           const fileSessionRef = `$file.session.key{${sessionKey}}`;
@@ -819,50 +848,59 @@ Deno.serve(async (req) => {
       const batchSize = body.batchSize || 10;
       const offset = body.offset || 0;
 
-      // Query pending canhotos from acerto_pedidos
-      const dbRes = await fetch(
-        `${supabaseUrl}/rest/v1/acerto_pedidos?select=numero_pedido,numero_unico,foto_canhoto_url&foto_canhoto_url=not.is.null&order=created_at.asc&limit=${batchSize}&offset=${offset}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${serviceKey}`,
-            'apikey': serviceKey,
-          },
-        }
-      );
-      const pendingCanhotos = await dbRes.json();
+      // Query canhotos from finalized acertos that still have foto_canhoto_url (file in bucket)
+      const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
+      const sb = createClient(supabaseUrl, serviceKey);
 
-      if (!Array.isArray(pendingCanhotos) || pendingCanhotos.length === 0) {
+      const { data: pendingCanhotos, error: dbErr } = await sb
+        .from('acerto_pedidos')
+        .select('numero_pedido, numero_unico, foto_canhoto_url, cliente_nome, acertos!inner(numero_ordem_carga, status)')
+        .eq('acertos.status', 'finalizado')
+        .not('foto_canhoto_url', 'is', null)
+        .neq('numero_pedido', 'Sem pedidos')
+        .order('created_at', { ascending: true })
+        .range(offset, offset + batchSize - 1);
+
+      if (dbErr) {
+        return new Response(JSON.stringify({ success: false, error: dbErr.message }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      if (!pendingCanhotos || pendingCanhotos.length === 0) {
         return new Response(
           JSON.stringify({ success: true, message: 'Nenhum canhoto pendente encontrado', total: 0 }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      const results: { nunota: number; success: boolean; error?: string }[] = [];
+      const results: { nunota: number; numnota: number; success: boolean; error?: string; skipped?: boolean }[] = [];
 
       for (const c of pendingCanhotos) {
+        // numero_pedido in DB stores NUNOTA, numero_unico stores NUMNOTA
         const nunotaInt = parseInt(String(c.numero_pedido), 10);
         const numnotaInt = parseInt(String(c.numero_unico || '0'), 10);
         const storagePath = c.foto_canhoto_url;
 
         try {
-          // 1. Create AD_CANHOTOS record
-          try {
-            await saveCrudRecord('AD_CANHOTOS', { NUNOTA: nunotaInt, NUMNOTA: numnotaInt });
-          } catch (_e) { /* may exist */ }
-
-          // 2. Download from bucket
+          // 1. Download from bucket - if file doesn't exist, it was already migrated
           const dlResponse = await fetch(`${supabaseUrl}/storage/v1/object/canhotos/${storagePath}`, {
             headers: { 'Authorization': `Bearer ${serviceKey}` },
           });
           if (!dlResponse.ok) {
-            results.push({ nunota: nunotaInt, success: false, error: `Download falhou: ${dlResponse.status}` });
+            // File already deleted from bucket = already migrated
+            results.push({ nunota: nunotaInt, numnota: numnotaInt, success: true, skipped: true });
             continue;
           }
           const mimeType = dlResponse.headers.get('content-type') || 'image/jpeg';
           const imageBytes = new Uint8Array(await dlResponse.arrayBuffer());
 
-          // 3. Upload via sessionUpload.mge
+          // 2. Create AD_CANHOTOS record with metadata
+          try {
+            const crudFields: Record<string, any> = { NUNOTA: nunotaInt, NUMNOTA: numnotaInt };
+            await saveCrudRecord('AD_CANHOTOS', crudFields);
+          } catch (_e) { /* may exist */ }
+
+          // 3. Upload via sessionUpload.mge with proper headers
           const token = await authenticate();
           const gatewayUrl = Deno.env.get('SANKHYA_GATEWAY_URL')!;
           const ext = mimeType.includes('png') ? 'png' : 'jpg';
@@ -880,14 +918,32 @@ Deno.serve(async (req) => {
           multipartBody.set(footerBytes, headerBytes.length + imageBytes.length);
 
           const sessionUploadUrl = `${gatewayUrl}/gateway/v1/mge/sessionUpload.mge?sessionkey=${encodeURIComponent(sessionKey)}&fitem=S&salvar=S&useCache=N`;
-          await fetch(sessionUploadUrl, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': `multipart/form-data; boundary=${boundary}`,
-            },
-            body: multipartBody,
-          });
+          
+          const doRetryUpload = async (authToken: string) => {
+            return await fetch(sessionUploadUrl, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'Content-Type': `multipart/form-data; boundary=${boundary}`,
+                'Accept': 'text/html',
+              },
+              body: multipartBody,
+            });
+          };
+
+          let uploadResp = await doRetryUpload(token);
+          if (uploadResp.status === 401) {
+            tokenCache.accessToken = null;
+            const newToken = await authenticate();
+            uploadResp = await doRetryUpload(newToken);
+          }
+
+          const uploadText = await uploadResp.text();
+          if (!uploadResp.ok) {
+            console.error(`[Sankhya] Retry NUNOTA=${nunotaInt}: sessionUpload falhou: ${uploadResp.status}`);
+            results.push({ nunota: nunotaInt, numnota: numnotaInt, success: false, error: `sessionUpload falhou: ${uploadResp.status}` });
+            continue;
+          }
 
           // 4. Link file to CANHOTO2 field
           const fileSessionRef = `$file.session.key{${sessionKey}}`;
@@ -902,25 +958,26 @@ Deno.serve(async (req) => {
             }
           }
 
-          // 5. Delete from bucket
+          // 5. Delete from bucket after successful upload
           const delResponse = await fetch(`${supabaseUrl}/storage/v1/object/canhotos/${storagePath}`, {
             method: 'DELETE',
             headers: { 'Authorization': `Bearer ${serviceKey}` },
           });
           console.log(`[Sankhya] Retry NUNOTA=${nunotaInt}: upload OK, bucket delete=${delResponse.status}`);
-          results.push({ nunota: nunotaInt, success: true });
+          results.push({ nunota: nunotaInt, numnota: numnotaInt, success: true });
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : 'Erro desconhecido';
           console.error(`[Sankhya] Retry NUNOTA=${nunotaInt} falhou:`, errMsg);
-          results.push({ nunota: nunotaInt, success: false, error: errMsg });
+          results.push({ nunota: nunotaInt, numnota: numnotaInt, success: false, error: errMsg });
         }
       }
 
       const successCount = results.filter(r => r.success).length;
+      const skippedCount = results.filter(r => r.skipped).length;
       return new Response(
         JSON.stringify({
           success: true,
-          message: `${successCount}/${results.length} canhotos migrados (offset=${offset})`,
+          message: `${successCount}/${results.length} canhotos processados (${skippedCount} já migrados, offset=${offset})`,
           results,
           hasMore: pendingCanhotos.length === batchSize,
           nextOffset: offset + batchSize,
