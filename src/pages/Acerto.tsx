@@ -173,7 +173,14 @@ const Acerto = () => {
       }
 
       const cab = cabecalhoRes.data as CabecalhoData;
-      const pedidosData = (pedidosRes.data || []) as PedidoData[];
+      // Deduplicate by NUNOTA — Sankhya query can return duplicates due to JOINs (e.g. multiple vehicles)
+      const rawPedidos = (pedidosRes.data || []) as PedidoData[];
+      const seen = new Set<number>();
+      const pedidosData = rawPedidos.filter((p) => {
+        if (!p.NUNOTA || seen.has(p.NUNOTA)) return false;
+        seen.add(p.NUNOTA);
+        return true;
+      });
 
       const sankhyaStatusToEntrega = (status: unknown): StatusEntrega => {
         const n =
