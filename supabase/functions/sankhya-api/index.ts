@@ -499,13 +499,13 @@ Deno.serve(async (req) => {
             });
             results.push({ nunota, success: true, action: 'inserted', response: saveResult });
           } else {
-            // UPDATE via CRUDServiceProvider.saveRecord (same call, PK fields identify the record)
+            // UPDATE via updateCrudRecord with PK fields
             console.log(`[Sankhya] UPDATE AD_NFACERTO: NUNOTA=${nunota}, OC=${ordemCarga}, STATUS=${status}`);
-            const saveResult = await saveCrudRecord('AD_NFACERTO', {
-              NUNOTA: nunota,
-              ORDEMCARGA: ordemCarga,
-              STATUS: status,
-            });
+            const saveResult = await updateCrudRecord(
+              'AD_NFACERTO',
+              { NUNOTA: nunota, ORDEMCARGA: ordemCarga },
+              { STATUS: status }
+            );
             results.push({ nunota, success: true, action: 'updated', response: saveResult });
           }
         } catch (e) {
