@@ -13,6 +13,19 @@ const tokenCache: TokenCache = {
   tokenExpiry: 0,
 };
 
+// Convert Sankhya date format "ddMMyyyy HH:mm:ss" to "dd/MM/yyyy"
+function formatDtnegForCrud(dtneg: string): string {
+  if (!dtneg) return dtneg;
+  // Already in dd/MM/yyyy format
+  if (dtneg.includes('/')) return dtneg.split(' ')[0];
+  // Format: "ddMMyyyy HH:mm:ss" or "ddMMyyyy"
+  const cleaned = dtneg.trim().split(' ')[0];
+  if (cleaned.length === 8) {
+    return `${cleaned.substring(0, 2)}/${cleaned.substring(2, 4)}/${cleaned.substring(4, 8)}`;
+  }
+  return dtneg;
+}
+
 async function authenticate(): Promise<string> {
   if (tokenCache.accessToken && Date.now() < tokenCache.tokenExpiry - 60000) {
     return tokenCache.accessToken;
@@ -552,7 +565,7 @@ Deno.serve(async (req) => {
         const crudFields: Record<string, any> = { NUNOTA: nunotaInt, NUMNOTA: numnotaInt };
         if (body.codparc) crudFields.CODPARC = parseInt(String(body.codparc), 10);
         if (body.vlrnota !== undefined && body.vlrnota !== null) crudFields.VLRNOTA = parseFloat(String(body.vlrnota));
-        if (body.dtneg) crudFields.DTNEG = body.dtneg;
+        if (body.dtneg) crudFields.DTNEG = formatDtnegForCrud(body.dtneg);
         if (body.codvend) crudFields.CODVEND = parseInt(String(body.codvend), 10);
         await saveCrudRecord('AD_CANHOTOS', crudFields);
       } catch (e) {
@@ -667,7 +680,7 @@ Deno.serve(async (req) => {
           const saveFields2: Record<string, any> = { NUNOTA: nunotaInt, NUMNOTA: numnotaInt, CANHOTO2: fileSessionRef };
           if (body.codparc) saveFields2.CODPARC = parseInt(String(body.codparc), 10);
           if (body.vlrnota !== undefined && body.vlrnota !== null) saveFields2.VLRNOTA = parseFloat(String(body.vlrnota));
-          if (body.dtneg) saveFields2.DTNEG = body.dtneg;
+          if (body.dtneg) saveFields2.DTNEG = formatDtnegForCrud(body.dtneg);
           if (body.codvend) saveFields2.CODVEND = parseInt(String(body.codvend), 10);
           await saveCrudRecord('AD_CANHOTOS', saveFields2);
         } catch (insertErr) {
@@ -677,7 +690,7 @@ Deno.serve(async (req) => {
             const updateFields2: Record<string, any> = { CANHOTO2: fileSessionRef };
             if (body.codparc) updateFields2.CODPARC = parseInt(String(body.codparc), 10);
             if (body.vlrnota !== undefined && body.vlrnota !== null) updateFields2.VLRNOTA = parseFloat(String(body.vlrnota));
-            if (body.dtneg) updateFields2.DTNEG = body.dtneg;
+            if (body.dtneg) updateFields2.DTNEG = formatDtnegForCrud(body.dtneg);
             if (body.codvend) updateFields2.CODVEND = parseInt(String(body.codvend), 10);
             await updateCrudRecord('AD_CANHOTOS', { NUNOTA: nunotaInt }, updateFields2);
           } else {
@@ -734,7 +747,7 @@ Deno.serve(async (req) => {
             const crudFields: Record<string, any> = { NUNOTA: nunotaInt, NUMNOTA: numnotaInt };
             if (c.codparc) crudFields.CODPARC = parseInt(String(c.codparc), 10);
             if (c.vlrnota !== undefined && c.vlrnota !== null) crudFields.VLRNOTA = parseFloat(String(c.vlrnota));
-            if (c.dtneg) crudFields.DTNEG = c.dtneg;
+            if (c.dtneg) crudFields.DTNEG = formatDtnegForCrud(c.dtneg);
             if (c.codvend) crudFields.CODVEND = parseInt(String(c.codvend), 10);
             await saveCrudRecord('AD_CANHOTOS', crudFields);
           } catch (_e) { /* may exist */ }
@@ -803,7 +816,7 @@ Deno.serve(async (req) => {
             const saveFields: Record<string, any> = { NUNOTA: nunotaInt, NUMNOTA: numnotaInt, CANHOTO2: fileSessionRef };
             if (c.codparc) saveFields.CODPARC = parseInt(String(c.codparc), 10);
             if (c.vlrnota !== undefined && c.vlrnota !== null) saveFields.VLRNOTA = parseFloat(String(c.vlrnota));
-            if (c.dtneg) saveFields.DTNEG = c.dtneg;
+            if (c.dtneg) saveFields.DTNEG = formatDtnegForCrud(c.dtneg);
             if (c.codvend) saveFields.CODVEND = parseInt(String(c.codvend), 10);
             await saveCrudRecord('AD_CANHOTOS', saveFields);
           } catch (insertErr) {
@@ -812,7 +825,7 @@ Deno.serve(async (req) => {
               const updateFields: Record<string, any> = { CANHOTO2: fileSessionRef };
               if (c.codparc) updateFields.CODPARC = parseInt(String(c.codparc), 10);
               if (c.vlrnota !== undefined && c.vlrnota !== null) updateFields.VLRNOTA = parseFloat(String(c.vlrnota));
-              if (c.dtneg) updateFields.DTNEG = c.dtneg;
+              if (c.dtneg) updateFields.DTNEG = formatDtnegForCrud(c.dtneg);
               if (c.codvend) updateFields.CODVEND = parseInt(String(c.codvend), 10);
               await updateCrudRecord('AD_CANHOTOS', { NUNOTA: nunotaInt }, updateFields);
             } else {
