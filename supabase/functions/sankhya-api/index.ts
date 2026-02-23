@@ -887,6 +887,7 @@ Deno.serve(async (req) => {
       }
 
       const results: { nunota: number; numnota: number; success: boolean; error?: string; skipped?: boolean }[] = [];
+      let skippedCount = 0;
 
       for (const c of pendingCanhotos) {
         // numero_pedido in DB stores NUNOTA, numero_unico stores NUMNOTA
@@ -895,12 +896,28 @@ Deno.serve(async (req) => {
         const storagePath = c.foto_canhoto_url;
 
         try {
+          // 0. Check if NUNOTA already exists in AD_CANHOTOS on Sankhya - skip if so
+          try {
+            const checkSql = `SELECT NUNOTA, CANHOTO2 FROM AD_CANHOTOS WHERE NUNOTA = ${nunotaInt}`;
+            const checkResult = await executeQuery(checkSql);
+            const checkRows = parseDbExplorerResponse(checkResult);
+            if (checkRows.length > 0 && checkRows[0].CANHOTO2) {
+              // Already exists with image - skip
+              skippedCount++;
+              results.push({ nunota: nunotaInt, numnota: numnotaInt, success: true, skipped: true });
+              continue;
+            }
+          } catch (_checkErr) {
+            // If check fails, proceed with upload
+          }
+
           // 1. Download from bucket - if file doesn't exist, it was already migrated
           const dlResponse = await fetch(`${supabaseUrl}/storage/v1/object/canhotos/${storagePath}`, {
             headers: { 'Authorization': `Bearer ${serviceKey}` },
           });
           if (!dlResponse.ok) {
             // File already deleted from bucket = already migrated
+            skippedCount++;
             results.push({ nunota: nunotaInt, numnota: numnotaInt, success: true, skipped: true });
             continue;
           }
@@ -1016,7 +1033,6 @@ Deno.serve(async (req) => {
       }
 
       const successCount = results.filter(r => r.success).length;
-      const skippedCount = results.filter(r => r.skipped).length;
       return new Response(
         JSON.stringify({
           success: true,
