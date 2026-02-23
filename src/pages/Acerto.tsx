@@ -484,8 +484,14 @@ const Acerto = () => {
         .eq("id", acertoId);
 
       // Upload canhotos to Sankhya BEFORE navigating (to avoid request cancellation)
-      const canhotosToUpload = ordemCarga.pedidos
-        .filter((p) => p.numero_pedido !== "Sem pedidos" && p.foto_canhoto_url)
+      const allPedidos = ordemCarga.pedidos.filter((p) => p.numero_pedido !== "Sem pedidos");
+      console.log(`[Canhotos] Total pedidos: ${allPedidos.length}, com foto: ${allPedidos.filter(p => p.foto_canhoto_url).length}`);
+      allPedidos.forEach((p) => {
+        console.log(`[Canhotos] Pedido ${p.numero_pedido}: foto_url=${p.foto_canhoto_url || 'NENHUMA'}, codparc=${p.codparc}, codvend=${p.codvend}, dtneg=${p.dtneg}, vlrnota=${p.vlrnota}`);
+      });
+
+      const canhotosToUpload = allPedidos
+        .filter((p) => p.foto_canhoto_url)
         .map((p) => ({
           nunota: parseInt(p.numero_pedido, 10),
           numnota: parseInt(p.numero_unico || "0", 10),
@@ -496,17 +502,21 @@ const Acerto = () => {
           codvend: p.codvend,
         }));
 
+      console.log(`[Canhotos] Upload para Sankhya: ${canhotosToUpload.length} canhotos`, JSON.stringify(canhotosToUpload));
+
       if (canhotosToUpload.length > 0) {
         try {
           const result = await sankhya.migrateCanhotos(canhotosToUpload);
           if (result.success) {
-            console.log(`Canhotos enviados ao Sankhya: ${canhotosToUpload.length} registros`);
+            console.log(`[Canhotos] Enviados ao Sankhya com sucesso: ${canhotosToUpload.length} registros`);
           } else {
-            console.error("Erro ao enviar canhotos:", result.error);
+            console.error("[Canhotos] Erro ao enviar:", result.error);
           }
         } catch (err) {
-          console.error("Erro ao enviar canhotos:", err);
+          console.error("[Canhotos] Exceção ao enviar:", err);
         }
+      } else {
+        console.warn("[Canhotos] NENHUM canhoto para enviar ao Sankhya!");
       }
 
       toast({ title: "Acerto finalizado!", description: "Dados salvos no sistema e no Sankhya com sucesso." });
