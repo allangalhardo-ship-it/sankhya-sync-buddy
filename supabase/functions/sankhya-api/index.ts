@@ -907,9 +907,33 @@ Deno.serve(async (req) => {
           const mimeType = dlResponse.headers.get('content-type') || 'image/jpeg';
           const imageBytes = new Uint8Array(await dlResponse.arrayBuffer());
 
-          // 2. Create AD_CANHOTOS record with metadata
+          // 2. Fetch metadata from Sankhya (CODPARC, CODVEND, VLRNOTA, DTNEG)
+          let codparc: number | null = null;
+          let codvend: number | null = null;
+          let vlrnota: number | null = null;
+          let dtneg: string | null = null;
+          try {
+            const metaSql = `SELECT CAB.CODPARC, CAB.CODVEND, CAB.VLRNOTA, CAB.DTNEG FROM TGFCAB CAB WHERE CAB.NUNOTA = ${nunotaInt}`;
+            const metaResult = await executeQuery(metaSql);
+            const metaRows = parseDbExplorerResponse(metaResult);
+            if (metaRows.length > 0) {
+              codparc = metaRows[0].CODPARC ? parseInt(String(metaRows[0].CODPARC), 10) : null;
+              codvend = metaRows[0].CODVEND ? parseInt(String(metaRows[0].CODVEND), 10) : null;
+              vlrnota = metaRows[0].VLRNOTA ? parseFloat(String(metaRows[0].VLRNOTA)) : null;
+              dtneg = metaRows[0].DTNEG ? String(metaRows[0].DTNEG) : null;
+              console.log(`[Sankhya] Retry NUNOTA=${nunotaInt}: meta CODPARC=${codparc}, CODVEND=${codvend}, VLRNOTA=${vlrnota}, DTNEG=${dtneg}`);
+            }
+          } catch (metaErr) {
+            console.warn(`[Sankhya] Retry NUNOTA=${nunotaInt}: erro ao buscar metadados:`, metaErr instanceof Error ? metaErr.message : metaErr);
+          }
+
+          // 2b. Create AD_CANHOTOS record with metadata
           try {
             const crudFields: Record<string, any> = { NUNOTA: nunotaInt, NUMNOTA: numnotaInt };
+            if (codparc) crudFields.CODPARC = codparc;
+            if (vlrnota !== null) crudFields.VLRNOTA = vlrnota;
+            if (dtneg) crudFields.DTNEG = formatDtnegForCrud(dtneg);
+            if (codvend) crudFields.CODVEND = codvend;
             await saveCrudRecord('AD_CANHOTOS', crudFields);
           } catch (_e) { /* may exist */ }
 
@@ -958,14 +982,20 @@ Deno.serve(async (req) => {
             continue;
           }
 
-          // 4. Link file to CANHOTO2 field
+          // 4. Link file to CANHOTO2 field with metadata
           const fileSessionRef = `$file.session.key{${sessionKey}}`;
+          const saveFields: Record<string, any> = { NUNOTA: nunotaInt, NUMNOTA: numnotaInt, CANHOTO2: fileSessionRef };
+          if (codparc) saveFields.CODPARC = codparc;
+          if (vlrnota !== null) saveFields.VLRNOTA = vlrnota;
+          if (dtneg) saveFields.DTNEG = formatDtnegForCrud(dtneg);
+          if (codvend) saveFields.CODVEND = codvend;
           try {
-            await saveCrudRecord('AD_CANHOTOS', { NUNOTA: nunotaInt, NUMNOTA: numnotaInt, CANHOTO2: fileSessionRef });
+            await saveCrudRecord('AD_CANHOTOS', saveFields);
           } catch (insertErr) {
             const msg = insertErr instanceof Error ? insertErr.message : '';
             if (msg.includes('PRIMARY KEY') || msg.includes('duplicada') || msg.includes('duplicate')) {
-              await updateCrudRecord('AD_CANHOTOS', { NUNOTA: nunotaInt }, { CANHOTO2: fileSessionRef });
+              const { NUNOTA: _n, NUMNOTA: _m, ...updateFields } = saveFields;
+              await updateCrudRecord('AD_CANHOTOS', { NUNOTA: nunotaInt }, updateFields);
             } else {
               throw insertErr;
             }
