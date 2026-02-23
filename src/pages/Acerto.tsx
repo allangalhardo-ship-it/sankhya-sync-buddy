@@ -429,6 +429,8 @@ const Acerto = () => {
             console.error("Erro ao fazer upload:", uploadError);
           } else {
             fotoUrl = uploadData.path;
+            // CRITICAL: Update the pedido object so the Sankhya upload filter picks it up
+            pedido.foto_canhoto_url = fotoUrl;
           }
         }
 
