@@ -1127,6 +1127,70 @@ Deno.serve(async (req) => {
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
+    // Action: cleanBucket - delete all files from canhotos bucket
+    if (action === 'cleanBucket') {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
+      const sb = createClient(supabaseUrl, serviceKey);
+
+      let totalDeleted = 0;
+      let hasMore = true;
+
+      while (hasMore) {
+        const { data: files, error: listErr } = await sb.storage
+          .from('canhotos')
+          .list('', { limit: 1000 });
+
+        if (listErr || !files || files.length === 0) {
+          hasMore = false;
+          break;
+        }
+
+        // List may include folders - we need to list recursively
+        const filePaths: string[] = [];
+        
+        // For each item, if it's a folder list its contents
+        for (const item of files) {
+          if (!item.id) {
+            // It's a folder, list its contents
+            const { data: subFiles } = await sb.storage
+              .from('canhotos')
+              .list(item.name, { limit: 1000 });
+            if (subFiles) {
+              for (const sf of subFiles) {
+                if (sf.id) filePaths.push(`${item.name}/${sf.name}`);
+              }
+            }
+          } else {
+            filePaths.push(item.name);
+          }
+        }
+
+        if (filePaths.length === 0) {
+          hasMore = false;
+          break;
+        }
+
+        // Delete in batches of 100
+        for (let i = 0; i < filePaths.length; i += 100) {
+          const batch = filePaths.slice(i, i + 100);
+          const { error: delErr } = await sb.storage.from('canhotos').remove(batch);
+          if (delErr) {
+            console.error('[cleanBucket] Erro ao deletar batch:', delErr.message);
+          } else {
+            totalDeleted += batch.length;
+            console.log(`[cleanBucket] Deletados ${batch.length} arquivos (total: ${totalDeleted})`);
+          }
+        }
+      }
+
+      return new Response(
+        JSON.stringify({ success: true, message: `${totalDeleted} arquivos deletados do bucket canhotos` }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     return new Response(
       JSON.stringify({ success: false, error: 'Action inválida.' }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
