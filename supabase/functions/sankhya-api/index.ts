@@ -834,11 +834,16 @@ Deno.serve(async (req) => {
           }
 
           // 5. Delete from bucket
-          const delResponse = await fetch(`${supabaseUrl}/storage/v1/object/canhotos/${storagePath}`, {
-            method: 'DELETE',
-            headers: { 'Authorization': `Bearer ${serviceKey}` },
+          const delResponse = await fetch(`${supabaseUrl}/storage/v1/object/remove/canhotos`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${serviceKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ prefixes: [storagePath] }),
           });
-          console.log(`[Sankhya] Migrate NUNOTA=${nunotaInt}: upload OK, bucket delete=${delResponse.status}`);
+          const delText = await delResponse.text();
+          console.log(`[Sankhya] Migrate NUNOTA=${nunotaInt}: upload OK, bucket delete=${delResponse.status}, body=${delText.substring(0, 200)}`);
           results.push({ nunota: nunotaInt, success: true });
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : 'Erro desconhecido';
@@ -1019,11 +1024,16 @@ Deno.serve(async (req) => {
           }
 
           // 5. Delete from bucket after successful upload
-          const delResponse = await fetch(`${supabaseUrl}/storage/v1/object/canhotos/${storagePath}`, {
-            method: 'DELETE',
-            headers: { 'Authorization': `Bearer ${serviceKey}` },
+          const delResponse = await fetch(`${supabaseUrl}/storage/v1/object/remove/canhotos`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${serviceKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ prefixes: [storagePath] }),
           });
-          console.log(`[Sankhya] Retry NUNOTA=${nunotaInt}: upload OK, bucket delete=${delResponse.status}`);
+          const delText2 = await delResponse.text();
+          console.log(`[Sankhya] Retry NUNOTA=${nunotaInt}: upload OK, bucket delete=${delResponse.status}, body=${delText2.substring(0, 200)}`);
           results.push({ nunota: nunotaInt, numnota: numnotaInt, success: true });
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : 'Erro desconhecido';
@@ -1115,6 +1125,61 @@ Deno.serve(async (req) => {
         hasMore: offset + batchSize < unique.length,
         nextOffset: offset + batchSize,
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // Action: cleanBucket - delete files from canhotos bucket (processes one folder per call)
+    if (action === 'cleanBucket') {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
+      const sb = createClient(supabaseUrl, serviceKey);
+
+      let totalDeleted = 0;
+
+      // List top-level items (folders = acerto UUIDs)
+      const { data: topItems, error: listErr } = await sb.storage
+        .from('canhotos')
+        .list('', { limit: 20 });
+
+      if (listErr || !topItems || topItems.length === 0) {
+        return new Response(
+          JSON.stringify({ success: true, message: 'Bucket já está vazio', totalDeleted: 0, hasMore: false }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Process each folder
+      for (const item of topItems) {
+        if (!item.id) {
+          // It's a folder - list and delete its contents
+          const { data: subFiles } = await sb.storage
+            .from('canhotos')
+            .list(item.name, { limit: 1000 });
+          if (subFiles && subFiles.length > 0) {
+            const paths = subFiles.filter(f => f.id).map(f => `${item.name}/${f.name}`);
+            if (paths.length > 0) {
+              const { error: delErr } = await sb.storage.from('canhotos').remove(paths);
+              if (!delErr) totalDeleted += paths.length;
+              else console.error(`[cleanBucket] Erro deletando ${item.name}:`, delErr.message);
+            }
+          }
+        } else {
+          // It's a file at root level
+          const { error: delErr } = await sb.storage.from('canhotos').remove([item.name]);
+          if (!delErr) totalDeleted += 1;
+        }
+      }
+
+      console.log(`[cleanBucket] Deletados ${totalDeleted} arquivos nesta rodada`);
+
+      // Check if there are more
+      const { data: remaining } = await sb.storage.from('canhotos').list('', { limit: 1 });
+      const hasMore = !!(remaining && remaining.length > 0);
+
+      return new Response(
+        JSON.stringify({ success: true, message: `${totalDeleted} arquivos deletados`, totalDeleted, hasMore }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     return new Response(
