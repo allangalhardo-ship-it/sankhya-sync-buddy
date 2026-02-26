@@ -1139,7 +1139,7 @@ Deno.serve(async (req) => {
       // List top-level items (folders = acerto UUIDs)
       const { data: topItems, error: listErr } = await sb.storage
         .from('canhotos')
-        .list('', { limit: 100 });
+        .list('', { limit: 20 });
 
       if (listErr || !topItems || topItems.length === 0) {
         return new Response(
