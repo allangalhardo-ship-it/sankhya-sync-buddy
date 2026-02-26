@@ -834,11 +834,16 @@ Deno.serve(async (req) => {
           }
 
           // 5. Delete from bucket
-          const delResponse = await fetch(`${supabaseUrl}/storage/v1/object/canhotos/${storagePath}`, {
-            method: 'DELETE',
-            headers: { 'Authorization': `Bearer ${serviceKey}` },
+          const delResponse = await fetch(`${supabaseUrl}/storage/v1/object/remove/canhotos`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${serviceKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ prefixes: [storagePath] }),
           });
-          console.log(`[Sankhya] Migrate NUNOTA=${nunotaInt}: upload OK, bucket delete=${delResponse.status}`);
+          const delText = await delResponse.text();
+          console.log(`[Sankhya] Migrate NUNOTA=${nunotaInt}: upload OK, bucket delete=${delResponse.status}, body=${delText.substring(0, 200)}`);
           results.push({ nunota: nunotaInt, success: true });
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : 'Erro desconhecido';
@@ -1019,11 +1024,16 @@ Deno.serve(async (req) => {
           }
 
           // 5. Delete from bucket after successful upload
-          const delResponse = await fetch(`${supabaseUrl}/storage/v1/object/canhotos/${storagePath}`, {
-            method: 'DELETE',
-            headers: { 'Authorization': `Bearer ${serviceKey}` },
+          const delResponse = await fetch(`${supabaseUrl}/storage/v1/object/remove/canhotos`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${serviceKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ prefixes: [storagePath] }),
           });
-          console.log(`[Sankhya] Retry NUNOTA=${nunotaInt}: upload OK, bucket delete=${delResponse.status}`);
+          const delText2 = await delResponse.text();
+          console.log(`[Sankhya] Retry NUNOTA=${nunotaInt}: upload OK, bucket delete=${delResponse.status}, body=${delText2.substring(0, 200)}`);
           results.push({ nunota: nunotaInt, numnota: numnotaInt, success: true });
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : 'Erro desconhecido';
