@@ -1127,7 +1127,7 @@ Deno.serve(async (req) => {
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Action: cleanBucket - delete all files from canhotos bucket
+    // Action: cleanBucket - delete files from canhotos bucket (processes one folder per call)
     if (action === 'cleanBucket') {
       const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
       const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -1135,58 +1135,49 @@ Deno.serve(async (req) => {
       const sb = createClient(supabaseUrl, serviceKey);
 
       let totalDeleted = 0;
-      let hasMore = true;
 
-      while (hasMore) {
-        const { data: files, error: listErr } = await sb.storage
-          .from('canhotos')
-          .list('', { limit: 1000 });
+      // List top-level items (folders = acerto UUIDs)
+      const { data: topItems, error: listErr } = await sb.storage
+        .from('canhotos')
+        .list('', { limit: 100 });
 
-        if (listErr || !files || files.length === 0) {
-          hasMore = false;
-          break;
-        }
+      if (listErr || !topItems || topItems.length === 0) {
+        return new Response(
+          JSON.stringify({ success: true, message: 'Bucket já está vazio', totalDeleted: 0, hasMore: false }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
 
-        // List may include folders - we need to list recursively
-        const filePaths: string[] = [];
-        
-        // For each item, if it's a folder list its contents
-        for (const item of files) {
-          if (!item.id) {
-            // It's a folder, list its contents
-            const { data: subFiles } = await sb.storage
-              .from('canhotos')
-              .list(item.name, { limit: 1000 });
-            if (subFiles) {
-              for (const sf of subFiles) {
-                if (sf.id) filePaths.push(`${item.name}/${sf.name}`);
-              }
+      // Process each folder
+      for (const item of topItems) {
+        if (!item.id) {
+          // It's a folder - list and delete its contents
+          const { data: subFiles } = await sb.storage
+            .from('canhotos')
+            .list(item.name, { limit: 1000 });
+          if (subFiles && subFiles.length > 0) {
+            const paths = subFiles.filter(f => f.id).map(f => `${item.name}/${f.name}`);
+            if (paths.length > 0) {
+              const { error: delErr } = await sb.storage.from('canhotos').remove(paths);
+              if (!delErr) totalDeleted += paths.length;
+              else console.error(`[cleanBucket] Erro deletando ${item.name}:`, delErr.message);
             }
-          } else {
-            filePaths.push(item.name);
           }
-        }
-
-        if (filePaths.length === 0) {
-          hasMore = false;
-          break;
-        }
-
-        // Delete in batches of 100
-        for (let i = 0; i < filePaths.length; i += 100) {
-          const batch = filePaths.slice(i, i + 100);
-          const { error: delErr } = await sb.storage.from('canhotos').remove(batch);
-          if (delErr) {
-            console.error('[cleanBucket] Erro ao deletar batch:', delErr.message);
-          } else {
-            totalDeleted += batch.length;
-            console.log(`[cleanBucket] Deletados ${batch.length} arquivos (total: ${totalDeleted})`);
-          }
+        } else {
+          // It's a file at root level
+          const { error: delErr } = await sb.storage.from('canhotos').remove([item.name]);
+          if (!delErr) totalDeleted += 1;
         }
       }
 
+      console.log(`[cleanBucket] Deletados ${totalDeleted} arquivos nesta rodada`);
+
+      // Check if there are more
+      const { data: remaining } = await sb.storage.from('canhotos').list('', { limit: 1 });
+      const hasMore = !!(remaining && remaining.length > 0);
+
       return new Response(
-        JSON.stringify({ success: true, message: `${totalDeleted} arquivos deletados do bucket canhotos` }),
+        JSON.stringify({ success: true, message: `${totalDeleted} arquivos deletados`, totalDeleted, hasMore }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
