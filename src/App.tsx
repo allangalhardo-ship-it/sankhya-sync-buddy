@@ -9,7 +9,7 @@ import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Acerto from "./pages/Acerto";
 import PendenciasLogistica from "./pages/PendenciasLogistica";
-import Canhotos from "./pages/Canhotos";
+import OCsPendentes from "./pages/OCsPendentes";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
