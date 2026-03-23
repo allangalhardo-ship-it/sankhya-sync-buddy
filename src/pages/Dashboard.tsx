@@ -116,17 +116,17 @@ const Dashboard = () => {
 
           <Card
             className="cursor-pointer transition-all hover:shadow-lg hover:-translate-y-1 border-2 border-l-4 border-l-[hsl(200,70%,45%)] hover:border-[hsl(200,70%,45%)]/50 group"
-            onClick={() => navigate("/canhotos")}
+            onClick={() => navigate("/ocs-pendentes")}
           >
             <CardHeader className="pb-3">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[hsl(200,70%,45%)]/10 group-hover:bg-[hsl(200,70%,45%)]/20 transition-colors">
-                <FileImage className="h-7 w-7 text-[hsl(200,70%,45%)]" />
+                <ClipboardList className="h-7 w-7 text-[hsl(200,70%,45%)]" />
               </div>
             </CardHeader>
             <CardContent>
-              <CardTitle className="text-xl mb-2">Buscar Canhotos</CardTitle>
+              <CardTitle className="text-xl mb-2">OCs Pendentes</CardTitle>
               <CardDescription>
-                Pesquise e visualize os comprovantes de entrega (canhotos) por pedido ou ordem de carga.
+                Visualize as ordens de carga que ainda não tiveram o acerto realizado.
               </CardDescription>
             </CardContent>
           </Card>
