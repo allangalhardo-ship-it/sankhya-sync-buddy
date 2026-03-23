@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ClipboardCheck, LogOut, User, Warehouse, FileImage } from "lucide-react";
+import { ClipboardCheck, LogOut, User, Warehouse, ClipboardList } from "lucide-react";
 import FRLogo from "@/components/FRLogo";
 
 const Dashboard = () => {
