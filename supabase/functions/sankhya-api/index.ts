@@ -380,6 +380,23 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const { action, method, path, ordemCarga } = body;
 
+    // Action: getOCsPendentes - list OCs from 03/2026 onwards
+    if (action === 'getOCsPendentes') {
+      const sql = buildOCsPendentesQuery();
+      console.log('[Sankhya] Query OCs pendentes');
+      const rawData = await executeQuery(sql);
+      const records = parseDbExplorerResponse(rawData);
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: records,
+          total: records.length,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Action: test - just test authentication
     if (action === 'test') {
       const token = await authenticate();
