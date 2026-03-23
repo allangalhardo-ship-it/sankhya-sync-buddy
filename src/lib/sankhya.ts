@@ -91,6 +91,14 @@ export const sankhya = {
     return data;
   },
 
+  async getOCsPendentes(): Promise<SankhyaResponse<{ ORDEMCARGA: number; MOTORISTA: string; CODPARC: number; AD_DATAHORASADA: string; DATAAT: string; NOMEREG: string; VALOR: number; QTDPEDIDO: number; QTDCLI: number; TIPVEI: string; AD_NROTA: string }[]>> {
+    const { data, error } = await supabase.functions.invoke("sankhya-api", {
+      body: { action: "getOCsPendentes" },
+    });
+    if (error) return { success: false, error: error.message };
+    return data;
+  },
+
   async getMotivosDevol(): Promise<SankhyaResponse<{ CODIGO: number; DESCRICAO: string }[]>> {
     const { data, error } = await supabase.functions.invoke("sankhya-api", {
       body: { action: "getMotivosDevol" },

@@ -9,7 +9,7 @@ import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Acerto from "./pages/Acerto";
 import PendenciasLogistica from "./pages/PendenciasLogistica";
-import Canhotos from "./pages/Canhotos";
+import OCsPendentes from "./pages/OCsPendentes";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -55,7 +55,7 @@ const App = () => (
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/acerto/:tipo" element={<ProtectedRoute><Acerto /></ProtectedRoute>} />
             <Route path="/pendencias-logistica" element={<ProtectedRoute><PendenciasLogistica /></ProtectedRoute>} />
-            <Route path="/canhotos" element={<ProtectedRoute><Canhotos /></ProtectedRoute>} />
+            <Route path="/ocs-pendentes" element={<ProtectedRoute><OCsPendentes /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>

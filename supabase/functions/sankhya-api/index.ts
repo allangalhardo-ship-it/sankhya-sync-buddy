@@ -276,6 +276,46 @@ GROUP BY ORD.ORDEMCARGA,
   `.trim();
 }
 
+function buildOCsPendentesQuery(): string {
+  return `
+SELECT
+  ORD.ORDEMCARGA,
+  PAR.NOMEPARC AS MOTORISTA,
+  PAR.CODPARC,
+  CONVERT(VARCHAR(10), ORD.AD_DATAHORASADA, 103) AS AD_DATAHORASADA,
+  CONVERT(VARCHAR(10), ORD.DTINIC, 103) AS DATAAT,
+  CASE WHEN REG.CODREG = 11200
+    THEN
+      CASE
+        WHEN MAX(IMP.AD_ONOFF) = 'ON' THEN 'SP-ON'
+        ELSE 'SP-OFF' END
+    ELSE RTRIM(REG.NOMEREG)
+  END AS NOMEREG,
+  SUM(IMP.VALOR_NOTA) AS VALOR,
+  COUNT(IMP.NUNOTA) AS QTDPEDIDO,
+  COUNT(DISTINCT IMP.CODIGO_DO_CLIENTE) AS QTDCLI,
+  PC.OPCAO AS TIPVEI,
+  ORD.AD_NROTA
+FROM TGFORD ORD
+JOIN IMPORDEMCARGA IMP ON IMP.ORDEMCARGA = ORD.ORDEMCARGA
+JOIN TSIREG REG ON REG.CODREG = ORD.CODREG
+LEFT JOIN TGFPAR PAR ON PAR.CODPARC = ORD.CODPARCMOTORISTA
+LEFT JOIN TDDOPC PC ON PC.VALOR = ORD.AD_TIPVEI AND PC.NUCAMPO = 9999990461
+WHERE ORD.DTINIC >= '2026-03-01'
+  AND ORD.SITUACAO = 'F'
+GROUP BY ORD.ORDEMCARGA,
+  PAR.NOMEPARC,
+  PAR.CODPARC,
+  REG.NOMEREG,
+  ORD.AD_DATAHORASADA,
+  PC.OPCAO,
+  REG.CODREG,
+  ORD.DTINIC,
+  ORD.AD_NROTA
+ORDER BY ORD.DTINIC DESC
+  `.trim();
+}
+
 function buildPedidosQuery(ordemCarga: string): string {
   return `
 SELECT
@@ -379,6 +419,23 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json();
     const { action, method, path, ordemCarga } = body;
+
+    // Action: getOCsPendentes - list OCs from 03/2026 onwards
+    if (action === 'getOCsPendentes') {
+      const sql = buildOCsPendentesQuery();
+      console.log('[Sankhya] Query OCs pendentes');
+      const rawData = await executeQuery(sql);
+      const records = parseDbExplorerResponse(rawData);
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: records,
+          total: records.length,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     // Action: test - just test authentication
     if (action === 'test') {
