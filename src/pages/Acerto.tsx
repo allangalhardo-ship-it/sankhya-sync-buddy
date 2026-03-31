@@ -375,6 +375,19 @@ const Acerto = () => {
   const handleFinalize = async () => {
     if (!ordemCarga || !acertoId) return;
 
+    // Validate: entregues must have canhoto
+    const entreguesSemCanhoto = ordemCarga.pedidos.filter(
+      (p) => p.status_entrega === "entregue" && !p.foto_canhoto_url && !p.fotoFile
+    );
+    if (entreguesSemCanhoto.length > 0) {
+      toast({
+        title: "Canhoto obrigatório",
+        description: `${entreguesSemCanhoto.length} pedido(s) marcado(s) como Entregue sem canhoto anexado. Anexe o canhoto antes de finalizar.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
     // If there are devolvidos and we haven't shown the dialog yet, show it
     if (devolvidos.length > 0 && !pendingDevolucaoFinalize) {
       setShowDevolucaoDialog(true);
