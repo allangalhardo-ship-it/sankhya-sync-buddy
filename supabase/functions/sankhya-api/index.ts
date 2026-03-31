@@ -552,6 +552,7 @@ Deno.serve(async (req) => {
         const nunota = parseInt(String(p.nunota), 10);
         const ordemCarga = parseInt(String(p.ordemCarga), 10);
         const status = parseInt(String(p.status), 10);
+        const obs = p.obs || null;
 
         try {
           // Check if record exists in AD_NFACERTO
@@ -559,22 +560,23 @@ Deno.serve(async (req) => {
           const checkResult = await executeQuery(checkSql);
           const existing = parseDbExplorerResponse(checkResult);
 
+          const fields: Record<string, any> = { NUNOTA: nunota, ORDEMCARGA: ordemCarga, STATUS: status };
+          if (obs) fields.OBS = obs;
+
           if (existing.length === 0) {
             // INSERT via CRUDServiceProvider.saveRecord
-            console.log(`[Sankhya] INSERT AD_NFACERTO: NUNOTA=${nunota}, OC=${ordemCarga}, STATUS=${status}`);
-            const saveResult = await saveCrudRecord('AD_NFACERTO', {
-              NUNOTA: nunota,
-              ORDEMCARGA: ordemCarga,
-              STATUS: status,
-            });
+            console.log(`[Sankhya] INSERT AD_NFACERTO: NUNOTA=${nunota}, OC=${ordemCarga}, STATUS=${status}, OBS=${obs || ''}`);
+            const saveResult = await saveCrudRecord('AD_NFACERTO', fields);
             results.push({ nunota, success: true, action: 'inserted', response: saveResult });
           } else {
             // UPDATE via updateCrudRecord with PK fields
-            console.log(`[Sankhya] UPDATE AD_NFACERTO: NUNOTA=${nunota}, OC=${ordemCarga}, STATUS=${status}`);
+            console.log(`[Sankhya] UPDATE AD_NFACERTO: NUNOTA=${nunota}, OC=${ordemCarga}, STATUS=${status}, OBS=${obs || ''}`);
+            const updateFields: Record<string, any> = { STATUS: status };
+            if (obs) updateFields.OBS = obs;
             const saveResult = await updateCrudRecord(
               'AD_NFACERTO',
               { NUNOTA: nunota, ORDEMCARGA: ordemCarga },
-              { STATUS: status }
+              updateFields
             );
             results.push({ nunota, success: true, action: 'updated', response: saveResult });
           }
