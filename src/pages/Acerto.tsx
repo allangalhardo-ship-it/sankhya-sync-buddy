@@ -857,6 +857,44 @@ const Acerto = () => {
         motorista={ordemCarga?.motorista || ""}
         saving={saving}
       />
+
+      {/* Dialog Não Carregado */}
+      <Dialog open={showNaoCarregadoDialog} onOpenChange={(open) => { if (!open) setShowNaoCarregadoDialog(false); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-orange-500" />
+              Justificativa — Não Carregado
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-muted-foreground">
+              Informe o motivo pelo qual o pedido{" "}
+              <strong>{naoCarregadoIndex !== null ? ordemCarga?.pedidos[naoCarregadoIndex]?.numero_unico || ordemCarga?.pedidos[naoCarregadoIndex]?.numero_pedido : ""}</strong>{" "}
+              não foi carregado.
+            </p>
+            <Textarea
+              placeholder="Descreva o motivo..."
+              value={naoCarregadoJustificativa}
+              onChange={(e) => setNaoCarregadoJustificativa(e.target.value)}
+              rows={4}
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowNaoCarregadoDialog(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={confirmNaoCarregado}
+              disabled={!naoCarregadoJustificativa.trim()}
+              className="bg-orange-500 hover:bg-orange-600"
+            >
+              Confirmar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
