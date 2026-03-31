@@ -69,6 +69,9 @@ const Acerto = () => {
   const scanningRef = useRef(false);
   const [showDevolucaoDialog, setShowDevolucaoDialog] = useState(false);
   const [pendingDevolucaoFinalize, setPendingDevolucaoFinalize] = useState(false);
+  const [showNaoCarregadoDialog, setShowNaoCarregadoDialog] = useState(false);
+  const [naoCarregadoIndex, setNaoCarregadoIndex] = useState<number | null>(null);
+  const [naoCarregadoJustificativa, setNaoCarregadoJustificativa] = useState("");
   const tipoLabel = tipo === "entrega" ? "Entrega" : "Devolução";
 
   const stopScanner = useCallback(() => {
