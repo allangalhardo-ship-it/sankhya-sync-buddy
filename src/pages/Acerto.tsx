@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { sankhya, CabecalhoData, PedidoData } from "@/lib/sankhya";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -11,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import ChecklistDevolucaoDialog, { DevolucaoInfo } from "@/components/ChecklistDevolucaoDialog";
 import {
-  ArrowLeft, ScanBarcode, Loader2, Truck, User, MapPin,
+  ArrowLeft, ScanBarcode, Loader2, Truck, User, MapPin, AlertTriangle,
   CheckCircle2, XCircle, RotateCcw, Clock, Camera, Save, Send, Video
 } from "lucide-react";
 
@@ -69,6 +70,9 @@ const Acerto = () => {
   const scanningRef = useRef(false);
   const [showDevolucaoDialog, setShowDevolucaoDialog] = useState(false);
   const [pendingDevolucaoFinalize, setPendingDevolucaoFinalize] = useState(false);
+  const [showNaoCarregadoDialog, setShowNaoCarregadoDialog] = useState(false);
+  const [naoCarregadoIndex, setNaoCarregadoIndex] = useState<number | null>(null);
+  const [naoCarregadoJustificativa, setNaoCarregadoJustificativa] = useState("");
   const tipoLabel = tipo === "entrega" ? "Entrega" : "Devolução";
 
   const stopScanner = useCallback(() => {
@@ -331,9 +335,26 @@ const Acerto = () => {
 
   const updatePedidoStatus = (index: number, status: StatusEntrega) => {
     if (!ordemCarga) return;
+    if (status === "nao_carregado") {
+      setNaoCarregadoIndex(index);
+      setNaoCarregadoJustificativa("");
+      setShowNaoCarregadoDialog(true);
+      return;
+    }
     const updated = { ...ordemCarga };
     updated.pedidos[index].status_entrega = status;
     setOrdemCarga(updated);
+  };
+
+  const confirmNaoCarregado = () => {
+    if (naoCarregadoIndex === null || !ordemCarga) return;
+    if (!naoCarregadoJustificativa.trim()) return;
+    const updated = { ...ordemCarga };
+    updated.pedidos[naoCarregadoIndex].status_entrega = "nao_carregado";
+    updated.pedidos[naoCarregadoIndex].observacao = naoCarregadoJustificativa.trim();
+    setOrdemCarga(updated);
+    setShowNaoCarregadoDialog(false);
+    setNaoCarregadoIndex(null);
   };
 
   const updatePedidoObs = (index: number, obs: string) => {
@@ -354,6 +375,19 @@ const Acerto = () => {
 
   const handleFinalize = async () => {
     if (!ordemCarga || !acertoId) return;
+
+    // Validate: entregues must have canhoto
+    const entreguesSemCanhoto = ordemCarga.pedidos.filter(
+      (p) => p.status_entrega === "entregue" && !p.foto_canhoto_url && !p.fotoFile
+    );
+    if (entreguesSemCanhoto.length > 0) {
+      toast({
+        title: "Canhoto obrigatório",
+        description: `${entreguesSemCanhoto.length} pedido(s) marcado(s) como Entregue sem canhoto anexado. Anexe o canhoto antes de finalizar.`,
+        variant: "destructive",
+      });
+      return;
+    }
 
     // If there are devolvidos and we haven't shown the dialog yet, show it
     if (devolvidos.length > 0 && !pendingDevolucaoFinalize) {
@@ -462,6 +496,7 @@ const Acerto = () => {
           nunota: parseInt(p.numero_pedido, 10),
           ordemCarga: parseInt(ordemCarga.numero, 10),
           status: statusMap[p.status_entrega],
+          obs: p.status_entrega === "nao_carregado" ? p.observacao : undefined,
         }));
 
       if (pedidosSankhya.length > 0) {
@@ -822,6 +857,44 @@ const Acerto = () => {
         motorista={ordemCarga?.motorista || ""}
         saving={saving}
       />
+
+      {/* Dialog Não Carregado */}
+      <Dialog open={showNaoCarregadoDialog} onOpenChange={(open) => { if (!open) setShowNaoCarregadoDialog(false); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-orange-500" />
+              Justificativa — Não Carregado
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-muted-foreground">
+              Informe o motivo pelo qual o pedido{" "}
+              <strong>{naoCarregadoIndex !== null ? ordemCarga?.pedidos[naoCarregadoIndex]?.numero_unico || ordemCarga?.pedidos[naoCarregadoIndex]?.numero_pedido : ""}</strong>{" "}
+              não foi carregado.
+            </p>
+            <Textarea
+              placeholder="Descreva o motivo..."
+              value={naoCarregadoJustificativa}
+              onChange={(e) => setNaoCarregadoJustificativa(e.target.value)}
+              rows={4}
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowNaoCarregadoDialog(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={confirmNaoCarregado}
+              disabled={!naoCarregadoJustificativa.trim()}
+              className="bg-orange-500 hover:bg-orange-600"
+            >
+              Confirmar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
