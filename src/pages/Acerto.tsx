@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { sankhya, CabecalhoData, PedidoData } from "@/lib/sankhya";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
