@@ -334,9 +334,26 @@ const Acerto = () => {
 
   const updatePedidoStatus = (index: number, status: StatusEntrega) => {
     if (!ordemCarga) return;
+    if (status === "nao_carregado") {
+      setNaoCarregadoIndex(index);
+      setNaoCarregadoJustificativa("");
+      setShowNaoCarregadoDialog(true);
+      return;
+    }
     const updated = { ...ordemCarga };
     updated.pedidos[index].status_entrega = status;
     setOrdemCarga(updated);
+  };
+
+  const confirmNaoCarregado = () => {
+    if (naoCarregadoIndex === null || !ordemCarga) return;
+    if (!naoCarregadoJustificativa.trim()) return;
+    const updated = { ...ordemCarga };
+    updated.pedidos[naoCarregadoIndex].status_entrega = "nao_carregado";
+    updated.pedidos[naoCarregadoIndex].observacao = naoCarregadoJustificativa.trim();
+    setOrdemCarga(updated);
+    setShowNaoCarregadoDialog(false);
+    setNaoCarregadoIndex(null);
   };
 
   const updatePedidoObs = (index: number, obs: string) => {
