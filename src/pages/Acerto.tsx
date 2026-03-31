@@ -495,6 +495,7 @@ const Acerto = () => {
           nunota: parseInt(p.numero_pedido, 10),
           ordemCarga: parseInt(ordemCarga.numero, 10),
           status: statusMap[p.status_entrega],
+          obs: p.status_entrega === "nao_carregado" ? p.observacao : undefined,
         }));
 
       if (pedidosSankhya.length > 0) {
