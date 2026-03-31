@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import ChecklistDevolucaoDialog, { DevolucaoInfo } from "@/components/ChecklistDevolucaoDialog";
 import {
-  ArrowLeft, ScanBarcode, Loader2, Truck, User, MapPin,
+  ArrowLeft, ScanBarcode, Loader2, Truck, User, MapPin, AlertTriangle,
   CheckCircle2, XCircle, RotateCcw, Clock, Camera, Save, Send, Video
 } from "lucide-react";
 
