@@ -11,6 +11,7 @@ import Acerto from "./pages/Acerto";
 import PendenciasLogistica from "./pages/PendenciasLogistica";
 import OCsPendentes from "./pages/OCsPendentes";
 import NotFound from "./pages/NotFound";
+import ResetPassword from "./pages/ResetPassword";
 
 const queryClient = new QueryClient();
 
@@ -52,6 +53,7 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/acerto/:tipo" element={<ProtectedRoute><Acerto /></ProtectedRoute>} />
             <Route path="/pendencias-logistica" element={<ProtectedRoute><PendenciasLogistica /></ProtectedRoute>} />
