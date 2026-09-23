@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import FRLogo from "@/components/FRLogo";
+import { supabase } from "@/integrations/supabase/client";
 
 const Login = () => {
   const { signIn, signUp } = useAuth();
@@ -29,6 +30,18 @@ const Login = () => {
       toast({ title: "Erro no login", description: error, variant: "destructive" });
     }
     setLoading(false);
+  };
+
+  const handleForgot = async () => {
+    if (!loginEmail) {
+      toast({ title: "Informe o e-mail", description: "Digite seu e-mail no campo acima.", variant: "destructive" });
+      return;
+    }
+    const { error } = await supabase.auth.resetPasswordForEmail(loginEmail, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    if (error) toast({ title: "Erro", description: error.message, variant: "destructive" });
+    else toast({ title: "E-mail enviado", description: "Verifique sua caixa de entrada para redefinir a senha." });
   };
 
   const handleRegister = async (e: React.FormEvent) => {
