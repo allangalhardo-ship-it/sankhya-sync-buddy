@@ -16,7 +16,7 @@
 - O status em AD_NFACERTO continua sendo gravado igual hoje.
 
 ## Precisa de você (uma vez)
-- Criar no AD_CANHOTOS um campo texto para o link, ex.: `LINKCANHOTO` (VARCHAR 1000), pelo Dicionário de Dados. Eu te passo o passo a passo / script quando for a hora.
+- Campo `LINK_CANHOTO` já criado no AD_CANHOTOS (feito).
 - Opcional: depois de validado, limpar as imagens antigas do campo CANHOTO2 para liberar espaço no banco (script que te mando para rodar no SSMS).
 
 ## Detalhes técnicos
@@ -24,7 +24,7 @@
 - Nova action `getTracking` na função `sankhya-api`: recebe os NUNOTAs da OC e retorna `{NUNOTA, SITUACAO, MOTIVODEVOL, LINK}` via `DbExplorerSP.executeQuery` (usando ROW_NUMBER por NUNOTA). Alternativa: juntar direto na query de `getPedidos`.
 - `Acerto.tsx`: pré-preenche status a partir do tracking (sem sobrescrever acertos já salvos), adiciona estado `conferido` por nota, botão "Ver canhoto", e troca a validação "Entregue precisa de canhoto" por "Entregue precisa de link OU foto" + "todas conferidas".
 - Persistência local do acerto (tabela de itens) ganha coluna `conferido` e `link_canhoto` para recuperar o estado ao reabrir.
-- `saveAcerto`/finalização: grava `LINKCANHOTO` via `CRUDServiceProvider.saveRecord` em AD_CANHOTOS (NUNOTA, NUMNOTA, CODPARC, VLRNOTA, DTNEG, CODVEND, LINKCANHOTO), sem `sessionUpload`.
+- `saveAcerto`/finalização: grava `LINK_CANHOTO` via `CRUDServiceProvider.saveRecord` em AD_CANHOTOS (NUNOTA, NUMNOTA, CODPARC, VLRNOTA, DTNEG, CODVEND, LINK_CANHOTO), sem `sessionUpload`.
 - Teste: regra de mapeamento SITUACAO -> status do acerto e regra de bloqueio da finalização.
 
 ## Ponto a confirmar
