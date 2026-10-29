@@ -83,9 +83,29 @@ export const sankhya = {
     return data;
   },
 
-  async saveAcerto(pedidos: { nunota: number; ordemCarga: number; status: number; obs?: string }[]): Promise<SankhyaResponse> {
+  async saveAcerto(pedidos: {
+    nunota: number; ordemCarga: number; status: number; obs?: string;
+    conferido?: boolean; codusuconf?: string; dhconf?: string; origemStatus?: "L" | "M";
+    codmotdev?: number; tipodev?: "P" | "T";
+  }[]): Promise<SankhyaResponse> {
     const { data, error } = await supabase.functions.invoke("sankhya-api", {
       body: { action: "saveAcerto", pedidos },
+    });
+    if (error) return { success: false, error: error.message };
+    return data;
+  },
+
+  async getTracking(ordemCarga: string): Promise<SankhyaResponse<{ NUNOTA: number; SITUACAO: string | null; MOTIVO: string | null; LINKSIMAGEM: string | null }[]>> {
+    const { data, error } = await supabase.functions.invoke("sankhya-api", {
+      body: { action: "getTracking", ordemCarga },
+    });
+    if (error) return { success: false, error: error.message };
+    return data;
+  },
+
+  async saveLinkCanhotos(canhotos: { nunota: number; numnota: number; link: string; codparc?: number; vlrnota?: number; dtneg?: string; codvend?: number }[]): Promise<SankhyaResponse> {
+    const { data, error } = await supabase.functions.invoke("sankhya-api", {
+      body: { action: "saveLinkCanhotos", canhotos },
     });
     if (error) return { success: false, error: error.message };
     return data;
