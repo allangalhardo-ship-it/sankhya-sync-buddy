@@ -1,1 +1,2 @@
 - Canhotos: only the photo link is stored in Sankhya (AD_CANHOTOS.LINK_CANHOTO via action saveLinkCanhotos); never upload image blobs to Sankhya in the acerto flow — it bloats the ERP database. Delivery status/photo come from the Lincros tracking tables (AD_TRK*) filtered by the OC's route (action getTracking); rules live in src/lib/tracking.ts.
+- The 'canhotos' storage bucket is permanent (its public URLs are stored in LINK_CANHOTO); the cleanBucket action is disabled and nothing may delete those files.
