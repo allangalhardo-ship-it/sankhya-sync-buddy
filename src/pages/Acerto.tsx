@@ -11,13 +11,14 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import ChecklistDevolucaoDialog, { DevolucaoInfo } from "@/components/ChecklistDevolucaoDialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { situacaoToStatus, primeiroLink, bloqueioFinalizacao, codigoMotivo, type StatusEntrega } from "@/lib/tracking";
 import {
   ArrowLeft, ScanBarcode, Loader2, Truck, User, MapPin, AlertTriangle,
-  CheckCircle2, XCircle, RotateCcw, Clock, Camera, Save, Send, Video
+  CheckCircle2, XCircle, RotateCcw, Clock, Camera, Send, Video, ExternalLink
 } from "lucide-react";
 
 
-type StatusEntrega = "pendente" | "entregue" | "devolvido" | "reentrega" | "nao_carregado";
 
 interface Pedido {
   id?: string;
@@ -35,6 +36,11 @@ interface Pedido {
   vlrnota?: number;
   dtneg?: string;
   codvend?: number;
+  conferido: boolean;
+  link_canhoto?: string | null;
+  status_roteirizador?: StatusEntrega | null;
+  parcial_roteirizador?: boolean;
+  motivo_roteirizador?: string | null;
 }
 
 interface OrdemCarga {
@@ -73,6 +79,7 @@ const Acerto = () => {
   const [showNaoCarregadoDialog, setShowNaoCarregadoDialog] = useState(false);
   const [naoCarregadoIndex, setNaoCarregadoIndex] = useState<number | null>(null);
   const [naoCarregadoJustificativa, setNaoCarregadoJustificativa] = useState("");
+  const devolucoesInfoRef = useRef<Record<string, DevolucaoInfo>>({});
   const tipoLabel = tipo === "entrega" ? "Entrega" : "Devolução";
 
   const stopScanner = useCallback(() => {
@@ -160,10 +167,13 @@ const Acerto = () => {
 
     try {
       // Fetch cabeçalho and pedidos in parallel from Sankhya
-      const [cabecalhoRes, pedidosRes] = await Promise.all([
+      const [cabecalhoRes, pedidosRes, trackingRes] = await Promise.all([
         sankhya.getCabecalho(codigoBarras.trim()),
         sankhya.getPedidos(codigoBarras.trim()),
+        sankhya.getTracking(codigoBarras.trim()),
       ]);
+      const trackingByNunota = new Map<number, { SITUACAO: string | null; MOTIVO: string | null; LINKSIMAGEM: string | null }>();
+      (trackingRes.data || []).forEach((t) => trackingByNunota.set(Number(t.NUNOTA), t));
 
       if (!cabecalhoRes.success || !cabecalhoRes.data) {
         console.error("Erro ao buscar cabeçalho:", cabecalhoRes);
@@ -208,12 +218,22 @@ const Acerto = () => {
         numero: String(cab.ORDEMCARGA),
         motorista: cab.NOMEPARC || "Motorista não encontrado",
         placa: pedidosData.length > 0 ? pedidosData[0].PLACA || "Placa não informada" : "Placa não informada",
-        pedidos: pedidosData.map((p) => ({
+        pedidos: pedidosData.map((p) => {
+          const salvo = sankhyaStatusToEntrega(p.STATUS_ACERTO);
+          const trk = trackingByNunota.get(Number(p.NUNOTA));
+          const mapped = situacaoToStatus(trk?.SITUACAO);
+          return {
           numero_pedido: String(p.NUNOTA || ""),
           numero_unico: String(p.NUMNOTA || ""),
           cliente_nome: p.NOME_DO_CLIENTE || "Cliente",
           endereco: p.ENDERECO || "",
-          status_entrega: sankhyaStatusToEntrega(p.STATUS_ACERTO),
+          // Never overwrite an acerto already saved in Sankhya
+          status_entrega: salvo !== "pendente" ? salvo : (mapped?.status ?? "pendente"),
+          conferido: false,
+          link_canhoto: primeiroLink(trk?.LINKSIMAGEM),
+          status_roteirizador: mapped?.status ?? null,
+          parcial_roteirizador: mapped?.parcial ?? false,
+          motivo_roteirizador: trk?.MOTIVO || null,
           observacao: [p.CARTASELO, p.AGENDAMENTO, p.PRIORIDADE].filter(Boolean).join(" | "),
           is_reentrega: p.REENT === "REENTREGA",
           vendedor: p.VENDEDOR || "",
@@ -221,7 +241,8 @@ const Acerto = () => {
           vlrnota: p.VALOR_NOTA,
           dtneg: (p as any).DTNEG || "",
           codvend: (p as any).CODVEND || 0,
-        })),
+          };
+        }),
       };
 
       if (ordem.pedidos.length === 0) {
@@ -231,6 +252,7 @@ const Acerto = () => {
             cliente_nome: "Nenhum pedido encontrado nesta ordem de carga",
             status_entrega: "pendente",
             observacao: "",
+            conferido: true,
           },
         ];
       }
@@ -262,7 +284,12 @@ const Acerto = () => {
               return {
                 ...p,
                 id: existing.id,
-                status_entrega: (existing.status_entrega as StatusEntrega) || p.status_entrega,
+                status_entrega:
+                  existing.status_entrega && existing.status_entrega !== "pendente"
+                    ? (existing.status_entrega as StatusEntrega)
+                    : p.status_entrega,
+                conferido: !!(existing as any).conferido,
+                link_canhoto: p.link_canhoto || (existing as any).link_canhoto || null,
                 observacao: existing.observacao || p.observacao,
                 foto_canhoto_url: existing.foto_canhoto_url || undefined,
               };
@@ -307,6 +334,8 @@ const Acerto = () => {
                   endereco: p.endereco,
                   status_entrega: p.status_entrega,
                   observacao: p.observacao,
+                  link_canhoto: p.link_canhoto ?? null,
+                  origem_status: p.status_roteirizador ? "L" : null,
                 }))
               );
 
@@ -364,6 +393,13 @@ const Acerto = () => {
     setOrdemCarga(updated);
   };
 
+  const toggleConferido = (index: number, value: boolean) => {
+    if (!ordemCarga) return;
+    const updated = { ...ordemCarga };
+    updated.pedidos[index].conferido = value;
+    setOrdemCarga(updated);
+  };
+
   const handlePhotoCapture = (index: number, file: File) => {
     if (!ordemCarga) return;
     const updated = { ...ordemCarga };
@@ -376,16 +412,17 @@ const Acerto = () => {
   const handleFinalize = async () => {
     if (!ordemCarga || !acertoId) return;
 
-    // Validate: entregues must have canhoto
-    const entreguesSemCanhoto = ordemCarga.pedidos.filter(
-      (p) => p.status_entrega === "entregue" && !p.foto_canhoto_url && !p.fotoFile
+    const bloqueio = bloqueioFinalizacao(
+      ordemCarga.pedidos.map((p) => ({
+        numero_pedido: p.numero_pedido,
+        status_entrega: p.status_entrega,
+        conferido: p.conferido,
+        link_canhoto: p.link_canhoto,
+        temFoto: !!(p.foto_canhoto_url || p.fotoFile),
+      }))
     );
-    if (entreguesSemCanhoto.length > 0) {
-      toast({
-        title: "Canhoto obrigatório",
-        description: `${entreguesSemCanhoto.length} pedido(s) marcado(s) como Entregue sem canhoto anexado. Anexe o canhoto antes de finalizar.`,
-        variant: "destructive",
-      });
+    if (bloqueio) {
+      toast({ title: "Não dá para finalizar ainda", description: bloqueio, variant: "destructive" });
       return;
     }
 
@@ -400,6 +437,7 @@ const Acerto = () => {
 
   const handleDevolucaoConfirm = async (devolucoes: DevolucaoInfo[]) => {
     if (!acertoId) return;
+    devolucoes.forEach((d) => { devolucoesInfoRef.current[d.nunota] = d; });
 
     // Save devolução data to dedicated table
     const { error } = await supabase.from("acerto_devolucoes").insert(
@@ -449,6 +487,13 @@ const Acerto = () => {
       nao_carregado: 9,
     };
 
+    const origemDe = (p: Pedido): "L" | "M" =>
+      p.status_roteirizador && p.status_roteirizador === p.status_entrega ? "L" : "M";
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const dhconf = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    const codusuconf = user?.email || "";
+
     try {
       for (const pedido of ordemCarga.pedidos) {
         let fotoUrl = pedido.foto_canhoto_url;
@@ -475,6 +520,9 @@ const Acerto = () => {
               status_entrega: pedido.status_entrega,
               observacao: pedido.observacao,
               foto_canhoto_url: fotoUrl,
+              conferido: pedido.conferido,
+              link_canhoto: pedido.link_canhoto ?? null,
+              origem_status: origemDe(pedido),
             })
             .eq("id", pedido.id);
         } else {
@@ -484,6 +532,9 @@ const Acerto = () => {
               status_entrega: pedido.status_entrega,
               observacao: pedido.observacao,
               foto_canhoto_url: fotoUrl,
+              conferido: pedido.conferido,
+              link_canhoto: pedido.link_canhoto ?? null,
+              origem_status: origemDe(pedido),
             })
             .eq("acerto_id", acertoId)
             .eq("numero_pedido", pedido.numero_pedido);
@@ -497,6 +548,16 @@ const Acerto = () => {
           ordemCarga: parseInt(ordemCarga.numero, 10),
           status: statusMap[p.status_entrega],
           obs: p.status_entrega === "nao_carregado" ? p.observacao : undefined,
+          conferido: p.conferido,
+          codusuconf,
+          dhconf,
+          origemStatus: origemDe(p),
+          ...(p.status_entrega === "devolvido" && devolucoesInfoRef.current[p.numero_pedido]
+            ? {
+                tipodev: (devolucoesInfoRef.current[p.numero_pedido].tipo_devolucao === "parcial" ? "P" : "T") as "P" | "T",
+                codmotdev: codigoMotivo(devolucoesInfoRef.current[p.numero_pedido].motivo) ?? undefined,
+              }
+            : {}),
         }));
 
       if (pedidosSankhya.length > 0) {
@@ -518,40 +579,27 @@ const Acerto = () => {
         .update({ status: "finalizado", finalizado_at: new Date().toISOString() })
         .eq("id", acertoId);
 
-      // Upload canhotos to Sankhya BEFORE navigating (to avoid request cancellation)
-      const allPedidos = ordemCarga.pedidos.filter((p) => p.numero_pedido !== "Sem pedidos");
-      console.log(`[Canhotos] Total pedidos: ${allPedidos.length}, com foto: ${allPedidos.filter(p => p.foto_canhoto_url).length}`);
-      allPedidos.forEach((p) => {
-        console.log(`[Canhotos] Pedido ${p.numero_pedido}: foto_url=${p.foto_canhoto_url || 'NENHUMA'}, codparc=${p.codparc}, codvend=${p.codvend}, dtneg=${p.dtneg}, vlrnota=${p.vlrnota}`);
-      });
+      // Only the photo LINK goes to Sankhya (AD_CANHOTOS.LINK_CANHOTO) — no image upload
+      const canhotosLinks = ordemCarga.pedidos
+        .filter((p) => p.numero_pedido !== "Sem pedidos" && p.status_entrega === "entregue")
+        .map((p) => {
+          const link = p.link_canhoto
+            || (p.foto_canhoto_url ? supabase.storage.from("canhotos").getPublicUrl(p.foto_canhoto_url).data.publicUrl : null);
+          return link ? {
+            nunota: parseInt(p.numero_pedido, 10),
+            numnota: parseInt(p.numero_unico || "0", 10),
+            link,
+            codparc: p.codparc,
+            vlrnota: p.vlrnota,
+            dtneg: p.dtneg,
+            codvend: p.codvend,
+          } : null;
+        })
+        .filter((c): c is NonNullable<typeof c> => c !== null);
 
-      const canhotosToUpload = allPedidos
-        .filter((p) => p.foto_canhoto_url)
-        .map((p) => ({
-          nunota: parseInt(p.numero_pedido, 10),
-          numnota: parseInt(p.numero_unico || "0", 10),
-          storagePath: p.foto_canhoto_url!,
-          codparc: p.codparc,
-          vlrnota: p.vlrnota,
-          dtneg: p.dtneg,
-          codvend: p.codvend,
-        }));
-
-      console.log(`[Canhotos] Upload para Sankhya: ${canhotosToUpload.length} canhotos`, JSON.stringify(canhotosToUpload));
-
-      if (canhotosToUpload.length > 0) {
-        try {
-          const result = await sankhya.migrateCanhotos(canhotosToUpload);
-          if (result.success) {
-            console.log(`[Canhotos] Enviados ao Sankhya com sucesso: ${canhotosToUpload.length} registros`);
-          } else {
-            console.error("[Canhotos] Erro ao enviar:", result.error);
-          }
-        } catch (err) {
-          console.error("[Canhotos] Exceção ao enviar:", err);
-        }
-      } else {
-        console.warn("[Canhotos] NENHUM canhoto para enviar ao Sankhya!");
+      if (canhotosLinks.length > 0) {
+        const linkRes = await sankhya.saveLinkCanhotos(canhotosLinks);
+        if (!linkRes.success) console.error("[Canhotos] Erro ao gravar links:", linkRes);
       }
 
       toast({ title: "Acerto finalizado!", description: "Dados salvos no sistema e no Sankhya com sucesso." });
@@ -752,6 +800,32 @@ const Acerto = () => {
                         )}
                       </div>
 
+                      {pedido.motivo_roteirizador && pedido.status_roteirizador === "devolvido" && (
+                        <p className="text-xs text-destructive">Motivo do motorista: {pedido.motivo_roteirizador}</p>
+                      )}
+
+                      {pedido.numero_pedido !== "Sem pedidos" && (
+                        <div className="flex items-center justify-between gap-2 rounded-lg border p-2">
+                          <label className="flex items-center gap-2 text-sm font-semibold cursor-pointer">
+                            <Checkbox
+                              checked={pedido.conferido}
+                              onCheckedChange={(v) => toggleConferido(index, v === true)}
+                            />
+                            Conferido
+                          </label>
+                          {pedido.link_canhoto ? (
+                            <Button asChild variant="outline" size="sm" className="text-xs">
+                              <a href={pedido.link_canhoto} target="_blank" rel="noopener noreferrer">
+                                <ExternalLink className="h-4 w-4 mr-1" />
+                                Ver canhoto
+                              </a>
+                            </Button>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">Sem foto no roteirizador</span>
+                          )}
+                        </div>
+                      )}
+
                       {/* Observação */}
                       <Textarea
                         placeholder="Observação (opcional)"
@@ -761,7 +835,8 @@ const Acerto = () => {
                         rows={2}
                       />
 
-                      {/* Photo */}
+                      {/* Photo — fallback only when the route system has no canhoto photo */}
+                      {!pedido.link_canhoto && pedido.status_entrega === "entregue" && (
                       <div className="space-y-2">
                         <input
                           type="file"
@@ -810,10 +885,11 @@ const Acerto = () => {
                             className="text-xs"
                           >
                             <Camera className="h-4 w-4 mr-1" />
-                            Anexar Canhoto
+                            Tirar foto do canhoto
                           </Button>
                         )}
                       </div>
+                      )}
                     </CardContent>
                   </Card>
                 );
@@ -853,6 +929,7 @@ const Acerto = () => {
           nf_fr: p.numero_unico || p.numero_pedido,
           parceiro: p.cliente_nome,
           vendedor: p.vendedor || "",
+          tipo_inicial: p.parcial_roteirizador ? "parcial" : undefined,
         }))}
         motorista={ordemCarga?.motorista || ""}
         saving={saving}
