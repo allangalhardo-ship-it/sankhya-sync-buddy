@@ -584,9 +584,98 @@ Deno.serve(async (req) => {
           const errMsg = e instanceof Error ? e.message : 'Erro desconhecido';
           console.error(`[Sankhya] Erro ao salvar AD_NFACERTO para NUNOTA ${nunota}:`, errMsg);
           results.push({ nunota, success: false, action: 'error', error: errMsg });
+          continue;
+        }
+
+        // Conference fields: saved separately so STATUS is never lost if these fields don't exist yet
+        const extras: Record<string, any> = {};
+        if (p.conferido !== undefined) extras.CONFERIDO = p.conferido ? 'S' : 'N';
+        if (p.codusuconf) extras.CODUSUCONF = String(p.codusuconf).substring(0, 100);
+        if (p.dhconf) extras.DHCONF = String(p.dhconf);
+        if (p.origemStatus) extras.ORIGEMSTATUS = p.origemStatus;
+        if (p.codmotdev) extras.CODMOTDEV = parseInt(String(p.codmotdev), 10);
+        if (p.tipodev) extras.TIPODEV = p.tipodev;
+        if (Object.keys(extras).length > 0) {
+          try {
+            await updateCrudRecord('AD_NFACERTO', { NUNOTA: nunota, ORDEMCARGA: ordemCarga }, extras);
+          } catch (e) {
+            const errMsg = e instanceof Error ? e.message : 'Erro desconhecido';
+            console.warn(`[Sankhya] Campos de conferência não gravados para NUNOTA ${nunota}:`, errMsg);
+            const r = results[results.length - 1];
+            (r as any).extrasError = errMsg;
+          }
         }
       }
 
+      return new Response(
+        JSON.stringify({ success: results.every(r => r.success), results }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Action: getTracking - Lincros tracking data for the notes of this OC's route
+    if (action === 'getTracking') {
+      const oc = String(parseInt(String(ordemCarga), 10));
+      if (oc === 'NaN') {
+        return new Response(
+          JSON.stringify({ success: false, error: 'ordemCarga é obrigatório' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      const sql = `SELECT NUNOTA, SITUACAO, MOTIVO, LINKSIMAGEM FROM (
+  SELECT N.NUNOTA, N.SITUACAO,
+         COALESCE(E.MOTIVOCENTRAL, E.MOTIVOMOTORIS, N.MOTIVODEVOL) AS MOTIVO,
+         E.LINKSIMAGEM,
+         ROW_NUMBER() OVER (PARTITION BY N.NUNOTA ORDER BY N.IDNOTA DESC) AS RN
+  FROM AD_TRKROTA R
+  JOIN AD_TRKENTREGA E ON E.IDROTA = R.IDROTA
+  JOIN AD_TRKNOTA N ON N.IDENTREGA = E.IDENTREGA
+  WHERE R.CODROTANEG = '${oc}' AND N.NUNOTA IS NOT NULL
+) X WHERE RN = 1`;
+      try {
+        const records = parseDbExplorerResponse(await executeQuery(sql));
+        return new Response(JSON.stringify({ success: true, data: records }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      } catch (e) {
+        const errMsg = e instanceof Error ? e.message : 'Erro desconhecido';
+        console.error('[Sankhya] Erro getTracking:', errMsg);
+        return new Response(JSON.stringify({ success: false, error: errMsg, data: [] }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+    }
+
+    // Action: saveLinkCanhotos - store only the photo link in AD_CANHOTOS.LINK_CANHOTO (no image upload)
+    if (action === 'saveLinkCanhotos') {
+      const { canhotos } = body;
+      if (!Array.isArray(canhotos) || canhotos.length === 0) {
+        return new Response(
+          JSON.stringify({ success: false, error: 'canhotos é obrigatório (array)' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      const results: { nunota: number; success: boolean; action?: string; error?: string }[] = [];
+      for (const c of canhotos) {
+        const nunotaInt = parseInt(String(c.nunota), 10);
+        const link = String(c.link || '').substring(0, 2000);
+        if (!nunotaInt || !link) { results.push({ nunota: nunotaInt, success: false, error: 'nunota/link inválido' }); continue; }
+        try {
+          const existing = parseDbExplorerResponse(await executeQuery(`SELECT NUNOTA FROM AD_CANHOTOS WHERE NUNOTA = ${nunotaInt}`));
+          if (existing.length === 0) {
+            const f: Record<string, any> = { NUNOTA: nunotaInt, NUMNOTA: parseInt(String(c.numnota), 10), LINK_CANHOTO: link };
+            if (c.codparc) f.CODPARC = parseInt(String(c.codparc), 10);
+            if (c.vlrnota !== undefined && c.vlrnota !== null) f.VLRNOTA = parseFloat(String(c.vlrnota));
+            if (c.dtneg) f.DTNEG = formatDtnegForCrud(c.dtneg);
+            if (c.codvend) f.CODVEND = parseInt(String(c.codvend), 10);
+            await saveCrudRecord('AD_CANHOTOS', f);
+            results.push({ nunota: nunotaInt, success: true, action: 'inserted' });
+          } else {
+            await updateCrudRecord('AD_CANHOTOS', { NUNOTA: nunotaInt }, { LINK_CANHOTO: link });
+            results.push({ nunota: nunotaInt, success: true, action: 'updated' });
+          }
+        } catch (e) {
+          const errMsg = e instanceof Error ? e.message : 'Erro desconhecido';
+          console.error(`[Sankhya] Erro LINK_CANHOTO NUNOTA ${nunotaInt}:`, errMsg);
+          results.push({ nunota: nunotaInt, success: false, error: errMsg });
+        }
+      }
       return new Response(
         JSON.stringify({ success: results.every(r => r.success), results }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
