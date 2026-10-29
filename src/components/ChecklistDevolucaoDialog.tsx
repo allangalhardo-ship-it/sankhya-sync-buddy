@@ -64,7 +64,7 @@ export default function ChecklistDevolucaoDialog({
   saving,
 }: Props) {
   const [devolucoes, setDevolucoes] = useState<DevolucaoInfo[]>(() =>
-    pedidosDevolvidos.map((p) => { ...emptyDevolucao(p.numero_pedido, p.cliente_nome, p.nf_fr, p.parceiro, motorista, p.vendedor), tipo_devolucao: p.tipo_inicial || "total" })
+    pedidosDevolvidos.map((p) => ({ ...emptyDevolucao(p.numero_pedido, p.cliente_nome, p.nf_fr, p.parceiro, motorista, p.vendedor), tipo_devolucao: p.tipo_inicial || "total" }))
   );
   const [currentIndex, setCurrentIndex] = useState(0);
   const [motivos, setMotivos] = useState<{ CODIGO: number; DESCRICAO: string }[]>([]);
@@ -80,7 +80,7 @@ export default function ChecklistDevolucaoDialog({
   // Reset state when pedidos change
   const resetIfNeeded = () => {
     if (devolucoes.length !== pedidosDevolvidos.length) {
-      setDevolucoes(pedidosDevolvidos.map((p) => { ...emptyDevolucao(p.numero_pedido, p.cliente_nome, p.nf_fr, p.parceiro, motorista, p.vendedor), tipo_devolucao: p.tipo_inicial || "total" }));
+      setDevolucoes(pedidosDevolvidos.map((p) => ({ ...emptyDevolucao(p.numero_pedido, p.cliente_nome, p.nf_fr, p.parceiro, motorista, p.vendedor), tipo_devolucao: p.tipo_inicial || "total" })));
       setCurrentIndex(0);
     }
   };
