@@ -1277,6 +1277,11 @@ Deno.serve(async (req) => {
 
     // Action: cleanBucket - delete files from canhotos bucket (processes one folder per call)
     if (action === 'cleanBucket') {
+      // Disabled: photos in this bucket are referenced by AD_CANHOTOS.LINK_CANHOTO — deleting them breaks the link
+      return new Response(
+        JSON.stringify({ success: false, error: 'cleanBucket desativado: as fotos do bucket canhotos são usadas pelo LINK_CANHOTO no Sankhya.' }),
+        { status: 410, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
       const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
       const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
       const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');

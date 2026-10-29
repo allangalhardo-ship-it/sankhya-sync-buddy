@@ -8,14 +8,21 @@ export interface TrackingRow {
 }
 
 /** Maps Lincros situation to the acerto status. null = no pre-fill. */
-export function situacaoToStatus(situacao: string | null | undefined): { status: StatusEntrega; parcial: boolean } | null {
+export function situacaoToStatus(
+  situacao: string | null | undefined,
+  motivo?: string | null
+): { status: StatusEntrega; parcial: boolean } | null {
+  const sit = (situacao || "").trim().toUpperCase();
+  // PROBLEMA, or a reason starting with REENTREGA, means the goods go back to a route: not a return
+  if (sit === "PROBLEMA" || (sit && sit !== "ENTREGUE" && sit !== "PARCIAL" && /^\s*REENTREGA/i.test(motivo || ""))) {
+    return { status: "reentrega", parcial: false };
+  }
   switch ((situacao || "").trim().toUpperCase()) {
     case "ENTREGUE":
       return { status: "entregue", parcial: false };
     case "PARCIAL":
       return { status: "devolvido", parcial: true };
     case "DEVOLVIDO":
-    case "PROBLEMA":
       return { status: "devolvido", parcial: false };
     default:
       return null;

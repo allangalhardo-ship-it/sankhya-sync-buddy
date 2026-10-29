@@ -221,7 +221,7 @@ const Acerto = () => {
         pedidos: pedidosData.map((p) => {
           const salvo = sankhyaStatusToEntrega(p.STATUS_ACERTO);
           const trk = trackingByNunota.get(Number(p.NUNOTA));
-          const mapped = situacaoToStatus(trk?.SITUACAO);
+          const mapped = situacaoToStatus(trk?.SITUACAO, trk?.MOTIVO);
           return {
           numero_pedido: String(p.NUNOTA || ""),
           numero_unico: String(p.NUMNOTA || ""),
@@ -800,7 +800,7 @@ const Acerto = () => {
                         )}
                       </div>
 
-                      {pedido.motivo_roteirizador && pedido.status_roteirizador === "devolvido" && (
+                      {pedido.motivo_roteirizador && (pedido.status_roteirizador === "devolvido" || pedido.status_roteirizador === "reentrega") && (
                         <p className="text-xs text-destructive">Motivo do motorista: {pedido.motivo_roteirizador}</p>
                       )}
 
