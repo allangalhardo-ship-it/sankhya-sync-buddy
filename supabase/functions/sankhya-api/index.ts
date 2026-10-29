@@ -553,12 +553,15 @@ Deno.serve(async (req) => {
         const ordemCarga = parseInt(String(p.ordemCarga), 10);
         const status = parseInt(String(p.status), 10);
         const obs = p.obs || null;
+        let codmotdevGravado = false;
 
         try {
           // Check if record exists in AD_NFACERTO
-          const checkSql = `SELECT NUNOTA, ORDEMCARGA, STATUS FROM AD_NFACERTO WHERE NUNOTA = ${nunota} AND ORDEMCARGA = ${ordemCarga}`;
+          const checkSql = `SELECT NUNOTA, ORDEMCARGA, STATUS, CODMOTDEV FROM AD_NFACERTO WHERE NUNOTA = ${nunota} AND ORDEMCARGA = ${ordemCarga}`;
           const checkResult = await executeQuery(checkSql);
           const existing = parseDbExplorerResponse(checkResult);
+          // Never overwrite a CODMOTDEV already saved
+          codmotdevGravado = existing.some((r: any) => r.CODMOTDEV !== null && r.CODMOTDEV !== undefined && String(r.CODMOTDEV).trim() !== '');
 
           const fields: Record<string, any> = { NUNOTA: nunota, ORDEMCARGA: ordemCarga, STATUS: status };
           if (obs) fields.OBS = obs;
@@ -593,7 +596,7 @@ Deno.serve(async (req) => {
         if (p.codusuconf) extras.CODUSUCONF = String(p.codusuconf).substring(0, 100);
         if (p.dhconf) extras.DHCONF = String(p.dhconf);
         if (p.origemStatus) extras.ORIGEMSTATUS = p.origemStatus;
-        if (p.codmotdev) extras.CODMOTDEV = parseInt(String(p.codmotdev), 10);
+        if (p.codmotdev && !codmotdevGravado) extras.CODMOTDEV = parseInt(String(p.codmotdev), 10);
         if (p.tipodev) extras.TIPODEV = p.tipodev;
         if (Object.keys(extras).length > 0) {
           try {
@@ -622,14 +625,16 @@ Deno.serve(async (req) => {
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-      const sql = `SELECT NUNOTA, SITUACAO, MOTIVO, LINKSIMAGEM FROM (
+      const sql = `SELECT NUNOTA, SITUACAO, MOTIVO, LINKSIMAGEM, CODMOTDEV_SUGERIDO FROM (
   SELECT N.NUNOTA, N.SITUACAO,
          COALESCE(E.MOTIVOCENTRAL, E.MOTIVOMOTORIS, N.MOTIVODEVOL) AS MOTIVO,
          E.LINKSIMAGEM,
+         MOT.CODIGO AS CODMOTDEV_SUGERIDO,
          ROW_NUMBER() OVER (PARTITION BY N.NUNOTA ORDER BY N.IDNOTA DESC) AS RN
   FROM AD_TRKROTA R
   JOIN AD_TRKENTREGA E ON E.IDROTA = R.IDROTA
   JOIN AD_TRKNOTA N ON N.IDENTREGA = E.IDENTREGA
+  LEFT JOIN AD_MOTDEV MOT ON MOT.CODLINCROS = E.CDMOTIVODEVOL
   WHERE R.CODROTANEG = '${oc}' AND N.NUNOTA IS NOT NULL
 ) X WHERE RN = 1`;
       try {
@@ -684,7 +689,10 @@ Deno.serve(async (req) => {
 
     // Action: getMotivosDevol - get motivos de devolução
     if (action === 'getMotivosDevol') {
-      const sql = `SELECT CODIGO, DESCRICAO FROM AD_MOTDEV ORDER BY DESCRICAO`;
+      const tipoMot = body.tipo === 'R' ? 'R' : 'D';
+      const sql = tipoMot === 'R'
+        ? `SELECT CODIGO, DESCRICAO FROM AD_MOTDEV WHERE TIPOMOT = 'R' ORDER BY DESCRICAO`
+        : `SELECT CODIGO, DESCRICAO FROM AD_MOTDEV WHERE ISNULL(TIPOMOT, 'D') = 'D' ORDER BY DESCRICAO`;
       const rawData = await executeQuery(sql);
       const records = parseDbExplorerResponse(rawData);
 

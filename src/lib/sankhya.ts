@@ -95,7 +95,7 @@ export const sankhya = {
     return data;
   },
 
-  async getTracking(ordemCarga: string): Promise<SankhyaResponse<{ NUNOTA: number; SITUACAO: string | null; MOTIVO: string | null; LINKSIMAGEM: string | null }[]>> {
+  async getTracking(ordemCarga: string): Promise<SankhyaResponse<{ NUNOTA: number; SITUACAO: string | null; MOTIVO: string | null; LINKSIMAGEM: string | null; CODMOTDEV_SUGERIDO: number | null }[]>> {
     const { data, error } = await supabase.functions.invoke("sankhya-api", {
       body: { action: "getTracking", ordemCarga },
     });
@@ -119,9 +119,9 @@ export const sankhya = {
     return data;
   },
 
-  async getMotivosDevol(): Promise<SankhyaResponse<{ CODIGO: number; DESCRICAO: string }[]>> {
+  async getMotivosDevol(tipo: "D" | "R" = "D"): Promise<SankhyaResponse<{ CODIGO: number; DESCRICAO: string }[]>> {
     const { data, error } = await supabase.functions.invoke("sankhya-api", {
-      body: { action: "getMotivosDevol" },
+      body: { action: "getMotivosDevol", tipo },
     });
     if (error) return { success: false, error: error.message };
     return data;
