@@ -36,7 +36,7 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onConfirm: (devolucoes: DevolucaoInfo[]) => void;
-  pedidosDevolvidos: { numero_pedido: string; cliente_nome: string; nf_fr?: string; parceiro?: string; vendedor?: string; tipo_inicial?: "parcial" | "total" }[];
+  pedidosDevolvidos: { numero_pedido: string; cliente_nome: string; nf_fr?: string; parceiro?: string; vendedor?: string; tipo_inicial?: "parcial" | "total"; codmotdev_inicial?: number }[];
   motorista: string;
   saving: boolean;
 }
@@ -76,6 +76,17 @@ export default function ChecklistDevolucaoDialog({
       });
     }
   }, [open]);
+
+  // Pre-select the reason suggested by the router (only when still empty)
+  useEffect(() => {
+    if (motivos.length === 0) return;
+    setDevolucoes((prev) => prev.map((d, i) => {
+      if (d.motivo) return d;
+      const cod = pedidosDevolvidos.find((p) => p.numero_pedido === d.nunota)?.codmotdev_inicial;
+      const m = cod ? motivos.find((x) => Number(x.CODIGO) === Number(cod)) : undefined;
+      return m ? { ...d, motivo: `${m.CODIGO} - ${m.DESCRICAO}` } : d;
+    }));
+  }, [motivos, devolucoes.length]);
 
   // Reset state when pedidos change
   const resetIfNeeded = () => {

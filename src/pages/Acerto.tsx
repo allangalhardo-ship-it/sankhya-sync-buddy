@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import ChecklistDevolucaoDialog, { DevolucaoInfo } from "@/components/ChecklistDevolucaoDialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { situacaoToStatus, primeiroLink, bloqueioFinalizacao, codigoMotivo, type StatusEntrega } from "@/lib/tracking";
 import {
   ArrowLeft, ScanBarcode, Loader2, Truck, User, MapPin, AlertTriangle,
@@ -41,6 +42,8 @@ interface Pedido {
   status_roteirizador?: StatusEntrega | null;
   parcial_roteirizador?: boolean;
   motivo_roteirizador?: string | null;
+  codmotdev_sugerido?: number | null;
+  codmotdev_reentrega?: number | null;
 }
 
 interface OrdemCarga {
@@ -79,6 +82,13 @@ const Acerto = () => {
   const [showNaoCarregadoDialog, setShowNaoCarregadoDialog] = useState(false);
   const [naoCarregadoIndex, setNaoCarregadoIndex] = useState<number | null>(null);
   const [naoCarregadoJustificativa, setNaoCarregadoJustificativa] = useState("");
+  const [motivosReentrega, setMotivosReentrega] = useState<{ CODIGO: number; DESCRICAO: string }[]>([]);
+
+  useEffect(() => {
+    sankhya.getMotivosDevol("R").then((res) => {
+      if (res.success && res.data) setMotivosReentrega(res.data);
+    });
+  }, []);
   const devolucoesInfoRef = useRef<Record<string, DevolucaoInfo>>({});
   const tipoLabel = tipo === "entrega" ? "Entrega" : "Devolução";
 
@@ -172,7 +182,7 @@ const Acerto = () => {
         sankhya.getPedidos(codigoBarras.trim()),
         sankhya.getTracking(codigoBarras.trim()),
       ]);
-      const trackingByNunota = new Map<number, { SITUACAO: string | null; MOTIVO: string | null; LINKSIMAGEM: string | null }>();
+      const trackingByNunota = new Map<number, { SITUACAO: string | null; MOTIVO: string | null; LINKSIMAGEM: string | null; CODMOTDEV_SUGERIDO?: number | null }>();
       (trackingRes.data || []).forEach((t) => trackingByNunota.set(Number(t.NUNOTA), t));
 
       if (!cabecalhoRes.success || !cabecalhoRes.data) {
@@ -234,6 +244,7 @@ const Acerto = () => {
           status_roteirizador: mapped?.status ?? null,
           parcial_roteirizador: mapped?.parcial ?? false,
           motivo_roteirizador: trk?.MOTIVO || null,
+          codmotdev_sugerido: trk?.CODMOTDEV_SUGERIDO ? Number(trk.CODMOTDEV_SUGERIDO) : null,
           observacao: [p.CARTASELO, p.AGENDAMENTO, p.PRIORIDADE].filter(Boolean).join(" | "),
           is_reentrega: p.REENT === "REENTREGA",
           vendedor: p.VENDEDOR || "",
@@ -558,6 +569,9 @@ const Acerto = () => {
                 codmotdev: codigoMotivo(devolucoesInfoRef.current[p.numero_pedido].motivo) ?? undefined,
               }
             : {}),
+          ...(p.status_entrega === "reentrega" && (p.codmotdev_reentrega ?? p.codmotdev_sugerido)
+            ? { codmotdev: (p.codmotdev_reentrega ?? p.codmotdev_sugerido) as number }
+            : {}),
         }));
 
       if (pedidosSankhya.length > 0) {
@@ -804,6 +818,35 @@ const Acerto = () => {
                         <p className="text-xs text-destructive">Motivo do motorista: {pedido.motivo_roteirizador}</p>
                       )}
 
+                      {pedido.status_entrega === "reentrega" && pedido.numero_pedido !== "Sem pedidos" && (
+                        <div className="space-y-1">
+                          <p className="text-xs font-semibold text-muted-foreground">Motivo da reentrega</p>
+                          <Select
+                            value={String(pedido.codmotdev_reentrega ?? pedido.codmotdev_sugerido ?? "")}
+                            onValueChange={(v) => {
+                              setOrdemCarga((prev) => {
+                                if (!prev) return prev;
+                                const pedidos = [...prev.pedidos];
+                                pedidos[index] = { ...pedidos[index], codmotdev_reentrega: parseInt(v, 10) };
+                                return { ...prev, pedidos };
+                              });
+                            }}
+                          >
+                            <SelectTrigger className="h-9">
+                              <SelectValue placeholder="Selecione o motivo" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {motivosReentrega.map((m) => (
+                                <SelectItem key={m.CODIGO} value={String(m.CODIGO)}>{m.DESCRICAO}</SelectItem>
+                              ))}
+                              {pedido.codmotdev_sugerido && !motivosReentrega.some((m) => Number(m.CODIGO) === pedido.codmotdev_sugerido) && (
+                                <SelectItem value={String(pedido.codmotdev_sugerido)}>Motivo {pedido.codmotdev_sugerido} (roteirizador)</SelectItem>
+                              )}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+
                       {pedido.numero_pedido !== "Sem pedidos" && (
                         <div className="flex items-center justify-between gap-2 rounded-lg border p-2">
                           <label className="flex items-center gap-2 text-sm font-semibold cursor-pointer">
@@ -930,6 +973,7 @@ const Acerto = () => {
           parceiro: p.cliente_nome,
           vendedor: p.vendedor || "",
           tipo_inicial: p.parcial_roteirizador ? "parcial" : undefined,
+          codmotdev_inicial: p.codmotdev_sugerido ?? undefined,
         }))}
         motorista={ordemCarga?.motorista || ""}
         saving={saving}
