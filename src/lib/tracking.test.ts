@@ -5,7 +5,11 @@ describe("situacaoToStatus", () => {
   it("ENTREGUE vira entregue", () => expect(situacaoToStatus("ENTREGUE")).toEqual({ status: "entregue", parcial: false }));
   it("PARCIAL vira devolvido parcial", () => expect(situacaoToStatus("PARCIAL")).toEqual({ status: "devolvido", parcial: true }));
   it("DEVOLVIDO vira devolvido", () => expect(situacaoToStatus("DEVOLVIDO")?.status).toBe("devolvido"));
-  it("PROBLEMA vira devolvido", () => expect(situacaoToStatus("PROBLEMA")?.status).toBe("devolvido"));
+  it("PROBLEMA vira reentrega", () => expect(situacaoToStatus("PROBLEMA")?.status).toBe("reentrega"));
+  it("motivo REENTREGA vira reentrega", () =>
+    expect(situacaoToStatus("DEVOLVIDO", "REENTREGA-CLIENTE FECHADO")?.status).toBe("reentrega"));
+  it("DEVOLVIDO com outro motivo continua devolvido", () =>
+    expect(situacaoToStatus("DEVOLVIDO", "AVARIA")?.status).toBe("devolvido"));
   it("PENDENTE/EM_ROTA não preenche", () => {
     expect(situacaoToStatus("PENDENTE")).toBeNull();
     expect(situacaoToStatus("EM_ROTA")).toBeNull();
