@@ -1,5 +1,20 @@
 import { describe, it, expect } from "vitest";
-import { situacaoToStatus, primeiroLink, bloqueioFinalizacao, codigoMotivo } from "./tracking";
+import { situacaoToStatus, primeiroLink, bloqueioFinalizacao, codigoMotivo, trocarCanhoto } from "./tracking";
+
+describe("trocarCanhoto", () => {
+  const ps = [
+    { link_canhoto: "L10", conferido: true },
+    { link_canhoto: "L11", conferido: true },
+    { link_canhoto: "L12", conferido: true },
+  ];
+  it("inverte os links das duas notas sem duplicar", () => {
+    const r = trocarCanhoto(ps, 0, 1);
+    expect(r.map((p) => p.link_canhoto)).toEqual(["L11", "L10", "L12"]);
+    expect(r[0].canhoto_ajustado && r[1].canhoto_ajustado).toBe(true);
+    expect(r[0].conferido || r[1].conferido).toBe(false);
+    expect(r[2].conferido).toBe(true);
+  });
+});
 
 describe("situacaoToStatus", () => {
   it("ENTREGUE vira entregue", () => expect(situacaoToStatus("ENTREGUE")).toEqual({ status: "entregue", parcial: false }));

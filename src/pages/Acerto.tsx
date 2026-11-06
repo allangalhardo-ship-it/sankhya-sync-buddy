@@ -13,7 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import ChecklistDevolucaoDialog, { DevolucaoInfo } from "@/components/ChecklistDevolucaoDialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { situacaoToStatus, primeiroLink, bloqueioFinalizacao, codigoMotivo, type StatusEntrega } from "@/lib/tracking";
+import { situacaoToStatus, primeiroLink, bloqueioFinalizacao, codigoMotivo, trocarCanhoto, type StatusEntrega } from "@/lib/tracking";
 import {
   ArrowLeft, ScanBarcode, Loader2, Truck, User, MapPin, AlertTriangle,
   CheckCircle2, XCircle, RotateCcw, Clock, Camera, Send, Video, ExternalLink
@@ -39,6 +39,7 @@ interface Pedido {
   codvend?: number;
   conferido: boolean;
   link_canhoto?: string | null;
+  canhoto_ajustado?: boolean;
   status_roteirizador?: StatusEntrega | null;
   parcial_roteirizador?: boolean;
   motivo_roteirizador?: string | null;
@@ -80,6 +81,7 @@ const Acerto = () => {
   const [showDevolucaoDialog, setShowDevolucaoDialog] = useState(false);
   const [pendingDevolucaoFinalize, setPendingDevolucaoFinalize] = useState(false);
   const [showNaoCarregadoDialog, setShowNaoCarregadoDialog] = useState(false);
+  const [trocaIndex, setTrocaIndex] = useState<number | null>(null);
   const [naoCarregadoIndex, setNaoCarregadoIndex] = useState<number | null>(null);
   const [naoCarregadoJustificativa, setNaoCarregadoJustificativa] = useState("");
   const [motivosReentrega, setMotivosReentrega] = useState<{ CODIGO: number; DESCRICAO: string }[]>([]);
@@ -300,7 +302,11 @@ const Acerto = () => {
                     ? (existing.status_entrega as StatusEntrega)
                     : p.status_entrega,
                 conferido: !!(existing as any).conferido,
-                link_canhoto: p.link_canhoto || (existing as any).link_canhoto || null,
+                // A link fixed by the operator wins over the route system
+                canhoto_ajustado: !!(existing as any).canhoto_ajustado,
+                link_canhoto: (existing as any).canhoto_ajustado
+                  ? ((existing as any).link_canhoto ?? null)
+                  : (p.link_canhoto || (existing as any).link_canhoto || null),
                 observacao: existing.observacao || p.observacao,
                 foto_canhoto_url: existing.foto_canhoto_url || undefined,
               };
@@ -409,6 +415,38 @@ const Acerto = () => {
     const updated = { ...ordemCarga };
     updated.pedidos[index].conferido = value;
     setOrdemCarga(updated);
+  };
+
+  const persistCanhoto = async (ps: Pedido[]) => {
+    if (!acertoId) return;
+    for (const p of ps) {
+      await supabase
+        .from("acerto_pedidos")
+        .update({ link_canhoto: p.link_canhoto ?? null, canhoto_ajustado: true, conferido: false })
+        .eq("acerto_id", acertoId)
+        .eq("numero_pedido", p.numero_pedido);
+    }
+  };
+
+  const aplicarTroca = (alvo: number, origem: number | "nova") => {
+    if (!ordemCarga) return;
+    let pedidos: Pedido[];
+    let mudados: Pedido[];
+    if (origem === "nova") {
+      pedidos = [...ordemCarga.pedidos];
+      pedidos[alvo] = { ...pedidos[alvo], link_canhoto: null, canhoto_ajustado: true, conferido: false };
+      mudados = [pedidos[alvo]];
+    } else {
+      pedidos = trocarCanhoto(ordemCarga.pedidos, alvo, origem);
+      mudados = [pedidos[alvo], pedidos[origem]];
+    }
+    setOrdemCarga({ ...ordemCarga, pedidos });
+    setTrocaIndex(null);
+    persistCanhoto(mudados);
+    toast({
+      title: "Canhoto ajustado",
+      description: origem === "nova" ? "Tire a foto do canhoto desta nota." : "Os canhotos das duas notas foram trocados. Confira de novo.",
+    });
   };
 
   const handlePhotoCapture = (index: number, file: File) => {
@@ -533,6 +571,7 @@ const Acerto = () => {
               foto_canhoto_url: fotoUrl,
               conferido: pedido.conferido,
               link_canhoto: pedido.link_canhoto ?? null,
+              canhoto_ajustado: !!pedido.canhoto_ajustado,
               origem_status: origemDe(pedido),
             })
             .eq("id", pedido.id);
@@ -545,6 +584,7 @@ const Acerto = () => {
               foto_canhoto_url: fotoUrl,
               conferido: pedido.conferido,
               link_canhoto: pedido.link_canhoto ?? null,
+              canhoto_ajustado: !!pedido.canhoto_ajustado,
               origem_status: origemDe(pedido),
             })
             .eq("acerto_id", acertoId)
@@ -856,6 +896,7 @@ const Acerto = () => {
                             />
                             Conferido
                           </label>
+                          <div className="flex items-center gap-2 flex-wrap justify-end">
                           {pedido.link_canhoto ? (
                             <Button asChild variant="outline" size="sm" className="text-xs">
                               <a href={pedido.link_canhoto} target="_blank" rel="noopener noreferrer">
@@ -866,7 +907,15 @@ const Acerto = () => {
                           ) : (
                             <span className="text-xs text-muted-foreground">Sem foto no roteirizador</span>
                           )}
+                          <Button variant="outline" size="sm" className="text-xs" onClick={() => setTrocaIndex(index)}>
+                            <RotateCcw className="h-4 w-4 mr-1" />
+                            Trocar canhoto
+                          </Button>
+                          </div>
                         </div>
+                      )}
+                      {pedido.canhoto_ajustado && pedido.numero_pedido !== "Sem pedidos" && (
+                        <Badge variant="outline" className="text-xs">Canhoto ajustado</Badge>
                       )}
 
                       {/* Observação */}
@@ -978,6 +1027,42 @@ const Acerto = () => {
         motorista={ordemCarga?.motorista || ""}
         saving={saving}
       />
+
+      {/* Dialog Trocar canhoto */}
+      <Dialog open={trocaIndex !== null} onOpenChange={(open) => { if (!open) setTrocaIndex(null); }}>
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Trocar canhoto da nota {trocaIndex !== null ? ordemCarga?.pedidos[trocaIndex]?.numero_unico : ""}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Escolha a foto certa desta nota. As duas notas trocam de canhoto entre si.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            {ordemCarga?.pedidos.map((p, i) => {
+              if (i === trocaIndex || p.numero_pedido === "Sem pedidos" || !p.link_canhoto) return null;
+              return (
+                <div key={p.numero_pedido} className="rounded-lg border p-2 space-y-2">
+                  <a href={p.link_canhoto} target="_blank" rel="noopener noreferrer">
+                    <img src={p.link_canhoto} alt={`Canhoto da nota ${p.numero_unico}`} className="w-full h-32 object-cover rounded" loading="lazy" />
+                  </a>
+                  <p className="text-xs font-semibold">Hoje na nota {p.numero_unico}</p>
+                  <p className="text-xs text-muted-foreground truncate">{p.cliente_nome}</p>
+                  <Button size="sm" className="w-full text-xs" onClick={() => trocaIndex !== null && aplicarTroca(trocaIndex, i)}>
+                    Usar esta foto
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => trocaIndex !== null && aplicarTroca(trocaIndex, "nova")}>
+              Nenhuma serve, tirar foto nova
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Dialog Não Carregado */}
       <Dialog open={showNaoCarregadoDialog} onOpenChange={(open) => { if (!open) setShowNaoCarregadoDialog(false); }}>
