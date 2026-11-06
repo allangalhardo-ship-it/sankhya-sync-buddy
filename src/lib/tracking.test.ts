@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { situacaoToStatus, primeiroLink, bloqueioFinalizacao, codigoMotivo, trocarCanhoto } from "./tracking";
 
 describe("trocarCanhoto", () => {
-  const ps = [
+  const ps: { link_canhoto: string; conferido: boolean; canhoto_ajustado?: boolean }[] = [
     { link_canhoto: "L10", conferido: true },
     { link_canhoto: "L11", conferido: true },
     { link_canhoto: "L12", conferido: true },
