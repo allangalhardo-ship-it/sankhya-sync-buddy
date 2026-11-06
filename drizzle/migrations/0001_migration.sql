@@ -1,0 +1,1 @@
+ALTER TABLE public.acerto_pedidos ADD COLUMN IF NOT EXISTS canhoto_ajustado boolean NOT NULL DEFAULT false;

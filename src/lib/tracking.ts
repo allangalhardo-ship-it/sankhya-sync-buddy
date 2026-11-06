@@ -54,6 +54,19 @@ export function bloqueioFinalizacao(pedidos: PedidoCheck[]): string | null {
   return null;
 }
 
+/** Swaps the canhoto links of notes a and b (driver attached photos to the wrong notes). */
+export function trocarCanhoto<T extends { link_canhoto?: string | null; canhoto_ajustado?: boolean; conferido: boolean }>(
+  pedidos: T[], a: number, b: number
+): T[] {
+  if (a === b || !pedidos[a] || !pedidos[b]) return pedidos;
+  const out = [...pedidos];
+  const la = out[a].link_canhoto ?? null;
+  const lb = out[b].link_canhoto ?? null;
+  out[a] = { ...out[a], link_canhoto: lb, canhoto_ajustado: true, conferido: false };
+  out[b] = { ...out[b], link_canhoto: la, canhoto_ajustado: true, conferido: false };
+  return out;
+}
+
 /** "12 - DESCRICAO" -> 12 */
 export function codigoMotivo(motivo: string | null | undefined): number | null {
   const n = parseInt((motivo || "").split("-")[0].trim(), 10);
