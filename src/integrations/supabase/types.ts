@@ -103,6 +103,7 @@ export type Database = {
       acerto_pedidos: {
         Row: {
           acerto_id: string
+          canhoto_ajustado: boolean
           cliente_nome: string | null
           conferido: boolean
           created_at: string
@@ -119,6 +120,7 @@ export type Database = {
         }
         Insert: {
           acerto_id: string
+          canhoto_ajustado?: boolean
           cliente_nome?: string | null
           conferido?: boolean
           created_at?: string
@@ -135,6 +137,7 @@ export type Database = {
         }
         Update: {
           acerto_id?: string
+          canhoto_ajustado?: boolean
           cliente_nome?: string | null
           conferido?: boolean
           created_at?: string
